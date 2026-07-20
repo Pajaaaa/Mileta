@@ -2602,9 +2602,7 @@ function conflictSet() {
   }
   return s;
 }
-function drawSignals() {
-  const confl = conflictSet();
-  const blink = Math.floor(G.time * 3) % 2 === 0;
+function drawSignalGlows() {
   for (let k = 0; k < 4; k++) {
     for (const key of SIG_KEYS) {
       const sig = G.signals[k][key];
@@ -2613,6 +2611,15 @@ function drawSignals() {
       ctx.fillStyle = glowColor(sig.state);
       ctx.fillRect(...GLOW_RECT[key]);
       ctx.restore();
+    }
+  }
+}
+function drawSignals() {
+  const confl = conflictSet();
+  const blink = Math.floor(G.time * 3) % 2 === 0;
+  for (let k = 0; k < 4; k++) {
+    for (const key of SIG_KEYS) {
+      const sig = G.signals[k][key];
       const pos = armXform(k, SIG_POS[key].x, SIG_POS[key].y);
       ctx.save();
       ctx.translate(pos.x, pos.y);
@@ -3165,7 +3172,7 @@ function frame(ts) {
         v.s = s;
         v.pose = pathPose(v.path, s);
       }
-      drawSignals();
+      drawSignalGlows();
       for (const [v] of fr) drawVehicle(v);
       // v okamžiku nárazu ukázat výbuch
       if (G.crashHistIdx != null && G.replay.idx >= G.crashHistIdx - 1 && G.crashPos) {
@@ -3178,6 +3185,7 @@ function frame(ts) {
         ctx.fillStyle = grad;
         ctx.beginPath(); ctx.arc(G.crashPos.x, G.crashPos.y, rr2, 0, TAU); ctx.fill();
       }
+      drawSignals();
       if (!G.paused) {
         if (G.replay.idx < last) G.replay.idx += 0.6;
         else {
@@ -3187,15 +3195,17 @@ function frame(ts) {
       }
     }
   } else if (G.running) {
-    drawSignals();
+    drawSignalGlows();
     drawSmoke(dt);
     for (const v of G.vehicles) drawVehicle(v);
     drawExplosions(dt);
+    drawSignals();
     drawSignalLabels();
     drawMissionBadges();
     drawPopups(rawDt);
   } else {
     // demo pozadí pod intrem – jen semafory
+    drawSignalGlows();
     drawSignals();
   }
   drawWeather(rawDt);

@@ -81,7 +81,7 @@ Malý HTTP server (systemd služba `mileta-api`, `127.0.0.1:2780`, data v `score
 
 ## Nasazení
 
-Statické soubory → `/var/www/mileta/` (nginx, vhost izovan.cz, no-cache na HTML). Skripty se načítají s `?v=N` — **při každém nasazení bumpnout verzi** v `index.html` (aktuálně `v=73`). API → `/opt/mileta-api/` + systemd.
+Statické soubory → `/var/www/mileta/` (nginx, vhost izovan.cz, no-cache na HTML). Skripty se načítají s `?v=N` — **při každém nasazení bumpnout verzi** v `index.html` (aktuálně `v=74`). API → `/opt/mileta-api/` + systemd.
 
 ## Ladění a testy
 
