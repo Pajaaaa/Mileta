@@ -22,12 +22,19 @@ const LX = [-24, -52, -80, -124];
 const EX = [24, 52, 80, 124];
 
 const TYPES = {
-  car:   { len: 42, wid: 19, vmax: 150, acc: 75,  brk: 170, p: 0.49 },
+  car:   { len: 42, wid: 19, vmax: 150, acc: 75,  brk: 170, p: 0.345 },
+  carTrailer: { len: 78, wid: 19, vmax: 125, acc: 52, brk: 145, p: 0.06, trailer: true },
+  tractorTrailer: { len: 100, wid: 23, vmax: 55, acc: 22, brk: 90, p: 0.02, tractorTrailer: true },
   van:   { len: 48, wid: 21, vmax: 140, acc: 65,  brk: 160, p: 0.15 },
-  truck: { len: 74, wid: 24, vmax: 110, acc: 40,  brk: 120, p: 0.12 },
+  truck: { len: 74, wid: 24, vmax: 110, acc: 40,  brk: 120, p: 0.08 },
+  tanker:  { len: 78, wid: 24, vmax: 105, acc: 38, brk: 118, p: 0.015 },
+  garbage: { len: 70, wid: 24, vmax: 95,  acc: 36, brk: 115, p: 0.015 },
+  tow:     { len: 64, wid: 23, vmax: 115, acc: 45, brk: 130, p: 0.015 },
+  semi:  { len: 110, wid: 24, vmax: 105, acc: 34, brk: 115, p: 0.06, semi: true },
   bus:   { len: 86, wid: 24, vmax: 112, acc: 42,  brk: 125, p: 0.08 },
   moto:  { len: 26, wid: 11, vmax: 175, acc: 95,  brk: 190, p: 0.16 },
 };
+const FORCE_VEHICLE = new URLSearchParams(location.search).get('veh');
 const CAR_COLORS = ['#c93a2e','#2e66c9','#39a04a','#d4a017','#7a4fb0','#c96b2e',
   '#3aa8a0','#b03a6e','#5b6770','#e0e0e0','#20242a','#8f2020','#1f4d8f','#d0c8b0'];
 
@@ -592,13 +599,21 @@ function buildVehicleSpec(arm) {
   if (laneIdx === 0 && PATHS[arm].leftAlt && Math.random() < 0.5) path = PATHS[arm].leftAlt;
   // typ
   let tr = Math.random(), type = 'car';
-  for (const [name, def] of Object.entries(TYPES)) { tr -= def.p; if (tr <= 0) { type = name; break; } }
+  if (FORCE_VEHICLE && TYPES[FORCE_VEHICLE]) type = FORCE_VEHICLE;
+  else for (const [name, def] of Object.entries(TYPES)) { tr -= def.p; if (tr <= 0) { type = name; break; } }
   const def = TYPES[type];
   return {
     id: vehId++, arm, laneIdx, path, type, def,
     s: 10, v: def.vmax * rnd(0.75, 0.95),
-    color: type === 'bus' ? pick(['#3b6ea5', '#6e7784', '#2f7d5d', '#8a6d2f'])   // linkové, ne MHD
-         : type === 'truck' ? pick(['#3b4d63','#7d2f2f','#2f5d3a','#666','#8a6d2f']) : pick(CAR_COLORS),
+    color: type === 'tractorTrailer' ? pick(['#36783f','#b13b2f','#356b9c','#6b7834'])
+         : type === 'bus' ? pick(['#3b6ea5', '#6e7784', '#2f7d5d', '#8a6d2f'])   // linkové, ne MHD
+         : type === 'garbage' ? pick(['#2f7d4a','#38768a','#68753b'])
+         : type === 'tow' ? pick(['#e49a1f','#d65c32','#3776a8'])
+         : type === 'truck' || type === 'tanker' || type === 'semi'
+           ? pick(['#3b4d63','#7d2f2f','#2f5d3a','#666','#8a6d2f']) : pick(CAR_COLORS),
+    cargoColor: type === 'truck' || type === 'tanker' || type === 'semi'
+      ? pick(['#e4e1d8','#c7c9c8','#9fa7aa','#d8c39f','#7e8f99','#b6b1a7']) : null,
+    trailerLoad: type === 'carTrailer' ? pick(['empty', 'tarp', 'luggage']) : null,
     counted: false, crashed: false, wait: 0, honkT: rnd(8, 20),
     pose: pathPose(path, 10),
   };
@@ -735,7 +750,10 @@ function updateVehicle(v, dt) {
     if (v.wait > v.honkT) {
       v.honkT += rnd(6, 15);
       const qLen = G.vehicles.filter(o => o.path === v.path && o.v < 2).length;
-      if (qLen >= 10 && Math.random() < 0.6) AudioFX.honk(v.type === 'truck' || v.type === 'bus');
+      if (qLen >= 10 && Math.random() < 0.6)
+        AudioFX.honk(v.type === 'truck' || v.type === 'tanker' ||
+          v.type === 'garbage' || v.type === 'tow' || v.type === 'semi' ||
+          v.type === 'tractorTrailer' || v.type === 'bus');
     }
   } else v.wait = 0;
 
@@ -767,7 +785,31 @@ function cornersFor(pose, len, wid) {
 // bus, trolejbus) se kolizně dělí na dva články, aby tuhý obdélník v oblouku
 // „nesekal" rohy do vedlejších pruhů (nefér kolize)
 const ARTIC_SEGS = [{ off: -31, len: 54 }, { off: 30, len: 58 }];
+const CAR_TRAILER_SEGS = [
+  { off: -24, len: 30, wid: 18 },
+  { off: 18, len: 42, wid: 19 },
+];
+const SEMI_SEGS = [
+  { off: -25, len: 62, wid: 24 },
+  { off: 32, len: 44, wid: 23 },
+];
+const TRACTOR_TRAILER_SEGS = [
+  { off: -26, len: 50, wid: 22 },
+  { off: 27, len: 44, wid: 22 },
+];
 function vehicleObbs(v) {
+  if (v.def.tractorTrailer) {
+    return TRACTOR_TRAILER_SEGS.map(sg =>
+      cornersFor(pathPose(v.path, v.s + sg.off), sg.len, sg.wid));
+  }
+  if (v.def.semi) {
+    return SEMI_SEGS.map(sg =>
+      cornersFor(pathPose(v.path, v.s + sg.off), sg.len, sg.wid));
+  }
+  if (v.def.trailer) {
+    return CAR_TRAILER_SEGS.map(sg =>
+      cornersFor(pathPose(v.path, v.s + sg.off), sg.len, sg.wid));
+  }
   if (v.def.artic) {
     return ARTIC_SEGS.map(sg => cornersFor(pathPose(v.path, v.s + sg.off), sg.len, v.def.wid));
   }
@@ -1844,6 +1886,40 @@ function drawTree(g, x, y, r) {
 
 // ==================== kreslení vozidel ====================
 // kloubový bus: dva články sledující dráhu + harmonika mezi nimi
+function drawWheelsLocal(W, axles, wheelLen = 7) {
+  ctx.fillStyle = '#171a1d';
+  for (const x of axles) {
+    rr(ctx, x - wheelLen / 2, -W / 2 - 1.4, wheelLen, 3.6, 1); ctx.fill();
+    rr(ctx, x - wheelLen / 2, W / 2 - 2.2, wheelLen, 3.6, 1); ctx.fill();
+  }
+}
+
+function drawVehicleLightsLocal(L, W, braking) {
+  ctx.fillStyle = '#fff0a8';
+  ctx.fillRect(L / 2 - 2, -W / 2 + 1.2, 2.2, 4);
+  ctx.fillRect(L / 2 - 2, W / 2 - 5.2, 2.2, 4);
+  ctx.fillStyle = braking ? '#ff3d32' : '#8e2723';
+  ctx.fillRect(-L / 2 - 0.2, -W / 2 + 1.2, 2.2, 4);
+  ctx.fillRect(-L / 2 - 0.2, W / 2 - 5.2, 2.2, 4);
+}
+
+function drawIndicatorsLocal(v, L, W, front = true, rear = true) {
+  if (!v.path || v.path.move === 'T' || v.crashed || Math.floor(G.time * 3.2) % 2) return;
+  const y = v.path.move === 'L' ? -W / 2 + 0.7 : W / 2 - 3.2;
+  ctx.save();
+  ctx.fillStyle = '#ffb000';
+  ctx.shadowColor = '#ffb000'; ctx.shadowBlur = 5;
+  if (front) ctx.fillRect(L / 2 - 3.2, y, 3, 2.6);
+  if (rear) ctx.fillRect(-L / 2 + 0.2, y, 3, 2.6);
+  ctx.restore();
+}
+
+function drawMirrorsLocal(W, x) {
+  ctx.fillStyle = '#20252a';
+  ctx.fillRect(x, -W / 2 - 2.2, 3.5, 2.2);
+  ctx.fillRect(x, W / 2, 3.5, 2.2);
+}
+
 function drawArticBus(v) {
   const W = v.def.wid;
   // harmonika (pod články)
@@ -1868,6 +1944,7 @@ function drawArticBus(v) {
     ctx.translate(p.x, p.y); ctx.rotate(p.ang);
     ctx.fillStyle = 'rgba(0,0,0,0.3)';
     ctx.fillRect(-L / 2 + 3, -W / 2 + 4, L, W);
+    drawWheelsLocal(W, front ? [-L * 0.3, L * 0.31] : [-L * 0.28]);
     if (v.crashed) {
       ctx.fillStyle = '#222';
       rr(ctx, -L / 2, -W / 2, L, W, 4); ctx.fill();
@@ -1899,12 +1976,284 @@ function drawArticBus(v) {
       ctx.fillStyle = '#ffe9a0';
       ctx.fillRect(L / 2 - 2, -W / 2 + 1, 2, 4);
       ctx.fillRect(L / 2 - 2, W / 2 - 5, 2, 4);
+      drawMirrorsLocal(W, L / 2 - 10);
+    } else {
+      ctx.fillStyle = v.v < 2 ? '#ff3d32' : '#8e2723';
+      ctx.fillRect(-L / 2, -W / 2 + 1, 2, 4);
+      ctx.fillRect(-L / 2, W / 2 - 5, 2, 4);
     }
+    drawIndicatorsLocal(v, L, W, front, !front);
     ctx.restore();
   }
 }
 
+// Osobní auto s jednonápravovým přívěsem. Auto i vozík mají vlastní pozici
+// na dráze, takže se souprava v oblouku přirozeně zalamuje jako kloubový bus.
+function drawCarTrailer(v) {
+  const carSeg = CAR_TRAILER_SEGS[1], trailerSeg = CAR_TRAILER_SEGS[0];
+  const carPose = pathPose(v.path, v.s + carSeg.off);
+  const trailerPose = pathPose(v.path, v.s + trailerSeg.off);
+
+  // Tažná oj se kreslí pod oběma karoseriemi.
+  const carHitch = {
+    x: carPose.x - Math.cos(carPose.ang) * (carSeg.len / 2 + 1),
+    y: carPose.y - Math.sin(carPose.ang) * (carSeg.len / 2 + 1),
+  };
+  const trailerHitch = {
+    x: trailerPose.x + Math.cos(trailerPose.ang) * (trailerSeg.len / 2 + 1),
+    y: trailerPose.y + Math.sin(trailerPose.ang) * (trailerSeg.len / 2 + 1),
+  };
+  ctx.save();
+  ctx.strokeStyle = v.crashed ? '#222' : '#4c5054';
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(carHitch.x, carHitch.y);
+  ctx.lineTo(trailerHitch.x, trailerHitch.y);
+  ctx.stroke();
+  ctx.restore();
+
+  // Přívěsný vozík.
+  ctx.save();
+  ctx.translate(trailerPose.x, trailerPose.y); ctx.rotate(trailerPose.ang);
+  const TL = trailerSeg.len, TW = trailerSeg.wid;
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.fillRect(-TL / 2 + 3, -TW / 2 + 4, TL, TW);
+  ctx.fillStyle = v.crashed ? '#222' : '#7b858d';
+  rr(ctx, -TL / 2, -TW / 2, TL, TW, 2); ctx.fill();
+  ctx.strokeStyle = v.crashed ? '#111' : '#3f474d'; ctx.lineWidth = 1.5;
+  rr(ctx, -TL / 2, -TW / 2, TL, TW, 2); ctx.stroke();
+  if (!v.crashed) {
+    // lem korby a jednoduchý náklad, aby byl vozík shora dobře čitelný
+    ctx.strokeStyle = '#c1c7cb'; ctx.lineWidth = 2;
+    rr(ctx, -TL / 2 + 3, -TW / 2 + 3, TL - 6, TW - 6, 1); ctx.stroke();
+    if (v.trailerLoad === 'tarp') {
+      ctx.fillStyle = '#4f7653';
+      rr(ctx, -TL / 2 + 5, -TW / 2 + 4, TL - 10, TW - 8, 3); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(-TL / 2 + 7, 0); ctx.lineTo(TL / 2 - 7, 0); ctx.stroke();
+    } else if (v.trailerLoad === 'luggage') {
+      ctx.fillStyle = '#9a6c3f';
+      ctx.fillRect(-8, -6, 10, 7); ctx.fillRect(3, -5, 9, 9);
+      ctx.strokeStyle = '#5e4027'; ctx.lineWidth = 1;
+      ctx.strokeRect(-8, -6, 10, 7); ctx.strokeRect(3, -5, 9, 9);
+    } else {
+      ctx.fillStyle = '#343a3e';
+      ctx.fillRect(-TL / 2 + 5, -TW / 2 + 5, TL - 10, TW - 10);
+    }
+    // kola a zadní světla
+    ctx.fillStyle = '#1d2023';
+    ctx.fillRect(-5, -TW / 2 - 1, 8, 3); ctx.fillRect(-5, TW / 2 - 2, 8, 3);
+    ctx.fillStyle = v.v < 2 ? '#ff5540' : '#a03028';
+    ctx.fillRect(-TL / 2, -TW / 2 + 2, 2, 4);
+    ctx.fillRect(-TL / 2, TW / 2 - 6, 2, 4);
+    drawIndicatorsLocal(v, TL, TW, false, true);
+  }
+  ctx.restore();
+
+  // Tažné osobní auto.
+  ctx.save();
+  ctx.translate(carPose.x, carPose.y); ctx.rotate(carPose.ang);
+  const L = carSeg.len, W = carSeg.wid;
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.fillRect(-L / 2 + 3, -W / 2 + 4, L, W);
+  drawWheelsLocal(W, [-L * 0.3, L * 0.3], 6.5);
+  ctx.fillStyle = v.crashed ? '#222' : v.color;
+  rr(ctx, -L / 2, -W / 2, L, W, 4); ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1.5;
+  rr(ctx, -L / 2, -W / 2, L, W, 4); ctx.stroke();
+  if (!v.crashed) {
+    ctx.fillStyle = 'rgba(255,255,255,0.18)';
+    rr(ctx, -L * 0.23, -W / 2 + 2, L * 0.48, W - 4, 4); ctx.fill();
+    ctx.fillStyle = 'rgba(25,35,55,0.85)';
+    ctx.fillRect(L * 0.16, -W / 2 + 2.5, 4.5, W - 5);
+    ctx.fillRect(-L * 0.21, -W / 2 + 2.5, 3.5, W - 5);
+    ctx.strokeStyle = 'rgba(0,0,0,0.32)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(L * 0.32, -W / 2 + 2); ctx.lineTo(L * 0.32, W / 2 - 2); ctx.stroke();
+    drawMirrorsLocal(W, L * 0.11);
+    drawVehicleLightsLocal(L, W, v.v < 2);
+    drawIndicatorsLocal(v, L, W, true, false);
+  }
+  ctx.restore();
+}
+
+function drawTractorTrailer(v) {
+  const trailerSeg = TRACTOR_TRAILER_SEGS[0], tractorSeg = TRACTOR_TRAILER_SEGS[1];
+  const trailerPose = pathPose(v.path, v.s + trailerSeg.off);
+  const tractorPose = pathPose(v.path, v.s + tractorSeg.off);
+
+  // Zemědělský valník se dvěma nápravami a plnou vrstvou balíků slámy.
+  ctx.save();
+  ctx.translate(trailerPose.x, trailerPose.y); ctx.rotate(trailerPose.ang);
+  const TL = trailerSeg.len, TW = trailerSeg.wid;
+  ctx.fillStyle = 'rgba(0,0,0,0.32)';
+  ctx.fillRect(-TL / 2 + 4, -TW / 2 + 5, TL, TW);
+  drawWheelsLocal(TW, [-TL * 0.22, -TL * 0.02], 8);
+  ctx.fillStyle = v.crashed ? '#222' : '#674727';
+  rr(ctx, -TL / 2, -TW / 2, TL, TW, 2); ctx.fill();
+  ctx.strokeStyle = v.crashed ? '#111' : '#342515'; ctx.lineWidth = 1.5;
+  rr(ctx, -TL / 2, -TW / 2, TL, TW, 2); ctx.stroke();
+  if (!v.crashed) {
+    // Osm hranatých balíků ve dvou řadách, každý se stahovacím provázkem.
+    const baleXs = [-18, -6, 6, 18];
+    for (const bx of baleXs) {
+      for (const by of [-5.2, 5.2]) {
+        ctx.fillStyle = '#d6a632';
+        rr(ctx, bx - 5, by - 4.5, 10, 9, 2); ctx.fill();
+        ctx.strokeStyle = '#8b6720'; ctx.lineWidth = 1;
+        rr(ctx, bx - 5, by - 4.5, 10, 9, 2); ctx.stroke();
+        ctx.strokeStyle = '#5c4930'; ctx.lineWidth = 0.8;
+        ctx.beginPath(); ctx.moveTo(bx, by - 4); ctx.lineTo(bx, by + 4); ctx.stroke();
+        ctx.strokeStyle = 'rgba(255,235,145,0.65)';
+        ctx.beginPath(); ctx.moveTo(bx - 3.5, by - 2.5); ctx.lineTo(bx + 3.5, by - 2.5); ctx.stroke();
+      }
+    }
+    // horní dva balíky vytvářejí dojem plně naloženého vozu
+    for (const bx of [-7, 7]) {
+      ctx.fillStyle = '#e0b33e';
+      rr(ctx, bx - 5, -4.5, 10, 9, 2); ctx.fill();
+      ctx.strokeStyle = '#8b6720'; ctx.lineWidth = 1;
+      rr(ctx, bx - 5, -4.5, 10, 9, 2); ctx.stroke();
+      ctx.strokeStyle = '#5c4930'; ctx.lineWidth = 0.8;
+      ctx.beginPath(); ctx.moveTo(bx, -4); ctx.lineTo(bx, 4); ctx.stroke();
+    }
+    ctx.fillStyle = v.v < 2 ? '#ff3d32' : '#8e2723';
+    ctx.fillRect(-TL / 2, -TW / 2 + 1, 2.5, 4.5);
+    ctx.fillRect(-TL / 2, TW / 2 - 5.5, 2.5, 4.5);
+    drawIndicatorsLocal(v, TL, TW, false, true);
+  }
+  ctx.restore();
+
+  // Oj mezi valníkem a traktorem.
+  const trailerFront = {
+    x: trailerPose.x + Math.cos(trailerPose.ang) * (TL / 2 + 1),
+    y: trailerPose.y + Math.sin(trailerPose.ang) * (TL / 2 + 1),
+  };
+  const tractorRear = {
+    x: tractorPose.x - Math.cos(tractorPose.ang) * (tractorSeg.len / 2 + 1),
+    y: tractorPose.y - Math.sin(tractorPose.ang) * (tractorSeg.len / 2 + 1),
+  };
+  ctx.save();
+  ctx.strokeStyle = v.crashed ? '#222' : '#3d3428'; ctx.lineWidth = 3.5; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(trailerFront.x, trailerFront.y); ctx.lineTo(tractorRear.x, tractorRear.y); ctx.stroke();
+  ctx.restore();
+
+  // Traktor: velká zadní kola, malá řiditelná přední kola, kabina a kapota.
+  ctx.save();
+  ctx.translate(tractorPose.x, tractorPose.y); ctx.rotate(tractorPose.ang);
+  const L = tractorSeg.len, W = tractorSeg.wid;
+  ctx.fillStyle = 'rgba(0,0,0,0.32)';
+  ctx.fillRect(-L / 2 + 4, -W / 2 + 5, L, W);
+  drawWheelsLocal(W, [-L * 0.24], 11);
+  drawWheelsLocal(W - 3, [L * 0.31], 6.5);
+  ctx.fillStyle = v.crashed ? '#222' : '#2c3030';
+  rr(ctx, -L / 2 + 2, -W / 2 + 2, L - 4, W - 4, 3); ctx.fill();
+  ctx.fillStyle = v.crashed ? '#222' : v.color;
+  rr(ctx, L * 0.04, -W / 2 + 2, L * 0.46, W - 4, 5); ctx.fill();
+  rr(ctx, -L * 0.27, -W / 2, L * 0.34, W, 4); ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1.5;
+  rr(ctx, -L * 0.27, -W / 2, L * 0.34, W, 4); ctx.stroke();
+  if (!v.crashed) {
+    ctx.fillStyle = 'rgba(28,43,53,0.9)';
+    ctx.fillRect(L * 0.01, -W / 2 + 3, 4.5, W - 6);
+    ctx.fillStyle = 'rgba(190,220,230,0.34)';
+    rr(ctx, -L * 0.22, -W / 2 + 3, L * 0.19, W - 6, 2); ctx.fill();
+    drawMirrorsLocal(W, L * 0.01);
+    drawVehicleLightsLocal(L, W, v.v < 2);
+    drawIndicatorsLocal(v, L, W, true, false);
+    // výfuk a oranžový maják
+    ctx.fillStyle = '#272b2d';
+    ctx.fillRect(L * 0.05, -W / 2 - 2, 3, 4);
+    ctx.fillStyle = '#ffad22';
+    ctx.beginPath(); ctx.arc(-L * 0.11, 0, 2.3, 0, TAU); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawSemiTruck(v) {
+  const trailerSeg = SEMI_SEGS[0], tractorSeg = SEMI_SEGS[1];
+  const trailerPose = pathPose(v.path, v.s + trailerSeg.off);
+  const tractorPose = pathPose(v.path, v.s + tractorSeg.off);
+
+  // Návěs: dlouhá skříň se zesíleným rámem, zadními vraty a dvěma nápravami.
+  ctx.save();
+  ctx.translate(trailerPose.x, trailerPose.y); ctx.rotate(trailerPose.ang);
+  const TL = trailerSeg.len, TW = trailerSeg.wid;
+  ctx.fillStyle = 'rgba(0,0,0,0.32)';
+  ctx.fillRect(-TL / 2 + 4, -TW / 2 + 5, TL, TW);
+  drawWheelsLocal(TW, [-TL * 0.31, -TL * 0.17], 8);
+  ctx.fillStyle = v.crashed ? '#222' : v.cargoColor;
+  rr(ctx, -TL / 2, -TW / 2, TL, TW, 3); ctx.fill();
+  ctx.strokeStyle = v.crashed ? '#111' : '#646b6f'; ctx.lineWidth = 1.5;
+  rr(ctx, -TL / 2, -TW / 2, TL, TW, 3); ctx.stroke();
+  if (!v.crashed) {
+    // podélné střešní prolisy a boční rám
+    ctx.strokeStyle = 'rgba(255,255,255,0.45)'; ctx.lineWidth = 1;
+    for (const y of [-TW * 0.27, 0, TW * 0.27]) {
+      ctx.beginPath(); ctx.moveTo(-TL / 2 + 3, y); ctx.lineTo(TL / 2 - 3, y); ctx.stroke();
+    }
+    ctx.strokeStyle = 'rgba(50,55,58,0.55)';
+    ctx.beginPath(); ctx.moveTo(-TL / 2 + 4, -TW / 2 + 3); ctx.lineTo(-TL / 2 + 4, TW / 2 - 3); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-TL / 2 + 8, -TW / 2 + 3); ctx.lineTo(-TL / 2 + 8, TW / 2 - 3); ctx.stroke();
+    ctx.fillStyle = '#d9dde0';
+    ctx.fillRect(-TL / 2 + 1, -2.2, 2, 4.4);
+    ctx.fillStyle = v.v < 2 ? '#ff3d32' : '#8e2723';
+    ctx.fillRect(-TL / 2, -TW / 2 + 1, 2.3, 4.5);
+    ctx.fillRect(-TL / 2, TW / 2 - 5.5, 2.3, 4.5);
+    drawIndicatorsLocal(v, TL, TW, false, true);
+  }
+  ctx.restore();
+
+  // Točna a rám mezi návěsem a tahačem.
+  const trailerFront = {
+    x: trailerPose.x + Math.cos(trailerPose.ang) * (TL / 2 - 2),
+    y: trailerPose.y + Math.sin(trailerPose.ang) * (TL / 2 - 2),
+  };
+  const tractorRear = {
+    x: tractorPose.x - Math.cos(tractorPose.ang) * (tractorSeg.len / 2 - 3),
+    y: tractorPose.y - Math.sin(tractorPose.ang) * (tractorSeg.len / 2 - 3),
+  };
+  ctx.save();
+  ctx.strokeStyle = '#252a2e'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(trailerFront.x, trailerFront.y); ctx.lineTo(tractorRear.x, tractorRear.y); ctx.stroke();
+  ctx.restore();
+
+  // Evropský tahač s krátkou kabinou a lůžkovou nástavbou.
+  ctx.save();
+  ctx.translate(tractorPose.x, tractorPose.y); ctx.rotate(tractorPose.ang);
+  const L = tractorSeg.len, W = tractorSeg.wid;
+  ctx.fillStyle = 'rgba(0,0,0,0.32)';
+  ctx.fillRect(-L / 2 + 4, -W / 2 + 5, L, W);
+  drawWheelsLocal(W, [-L * 0.28, L * 0.28], 8);
+  ctx.fillStyle = v.crashed ? '#222' : '#30363a';
+  rr(ctx, -L / 2, -W / 2 + 2, L * 0.4, W - 4, 2); ctx.fill();
+  ctx.fillStyle = v.crashed ? '#222' : v.color;
+  rr(ctx, -L * 0.1, -W / 2, L * 0.6, W, 5); ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1.5;
+  rr(ctx, -L * 0.1, -W / 2, L * 0.6, W, 5); ctx.stroke();
+  if (!v.crashed) {
+    ctx.fillStyle = 'rgba(255,255,255,0.13)';
+    rr(ctx, -L * 0.02, -W / 2 + 3, L * 0.24, W - 6, 3); ctx.fill();
+    ctx.fillStyle = 'rgba(18,31,43,0.92)';
+    ctx.fillRect(L / 2 - 7, -W / 2 + 3, 4.5, W - 6);
+    ctx.fillStyle = '#15191c';
+    ctx.fillRect(L / 2 - 1.5, -W / 2 + 5, 1.5, W - 10);
+    drawMirrorsLocal(W, L / 2 - 10);
+    drawVehicleLightsLocal(L, W, v.v < 2);
+    drawIndicatorsLocal(v, L, W, true, false);
+    // střešní světla a výfuk za kabinou
+    ctx.fillStyle = '#ffcf68';
+    for (const y of [-6, 0, 6]) ctx.fillRect(L / 2 - 2, y - 0.8, 1.5, 1.6);
+    ctx.fillStyle = '#303438';
+    ctx.fillRect(-L * 0.1, -W / 2 - 1, 5, 2.5);
+  }
+  ctx.restore();
+}
+
 function drawVehicle(v) {
+  if (v.def.tractorTrailer) { drawTractorTrailer(v); return; }
+  if (v.def.semi) { drawSemiTruck(v); return; }
+  if (v.def.trailer) { drawCarTrailer(v); return; }
   if (v.def.artic) { drawArticBus(v); return; }
   const { x, y, ang } = v.pose;
   ctx.save();
@@ -1921,57 +2270,169 @@ function drawVehicle(v) {
     return;
   }
   if (v.emg) {
+    drawWheelsLocal(W, [-L * 0.3, L * 0.3], L >= 65 ? 8 : 6.5);
     drawEmergencyBody(v, L, W);
     ctx.restore();
     return;
   }
   if (v.mhd) {
+    drawWheelsLocal(W, [-L * 0.34, L * 0.34], 8);
     drawMhdBody(v, L, W);
     ctx.restore();
     return;
   }
   if (v.type === 'moto') {
-    ctx.fillStyle = '#222';
-    rr(ctx, -L / 2, -W / 2 + 2, L, W - 4, 3); ctx.fill();
+    ctx.fillStyle = '#111518';
+    ctx.beginPath(); ctx.ellipse(-L * 0.32, 0, 5, 3.2, 0, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(L * 0.34, 0, 5, 3.2, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#2c3034';
+    rr(ctx, -L / 2 + 4, -2.2, L - 8, 4.4, 2); ctx.fill();
     ctx.fillStyle = v.color;
-    rr(ctx, -L / 2 + 4, -W / 2 + 1, L - 10, W - 2, 3); ctx.fill();
-    ctx.fillStyle = '#e8c9a0';
-    ctx.beginPath(); ctx.arc(0, 0, 4, 0, TAU); ctx.fill();  // helma/jezdec
+    rr(ctx, -3, -4, 10, 8, 3); ctx.fill();
+    ctx.fillStyle = '#202b36';
+    ctx.beginPath(); ctx.arc(1, 0, 4, 0, TAU); ctx.fill();
+    ctx.fillStyle = v.color;
+    ctx.beginPath(); ctx.arc(5, 0, 3.4, 0, TAU); ctx.fill();
+    ctx.strokeStyle = '#30363b'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(L * 0.25, -4); ctx.lineTo(L * 0.25, 4); ctx.stroke();
+    ctx.fillStyle = '#fff0a8'; ctx.fillRect(L / 2 - 3, -1.4, 2.5, 2.8);
+    ctx.fillStyle = v.v < 2 ? '#ff3d32' : '#8e2723'; ctx.fillRect(-L / 2 + 1, -1.3, 2, 2.6);
+    drawIndicatorsLocal(v, L, W);
     ctx.restore();
     return;
   }
+
+  const heavyRigid = v.type === 'truck' || v.type === 'tanker' || v.type === 'garbage';
+  const axles = heavyRigid ? [-L * 0.36, -L * 0.2, L * 0.31]
+    : v.type === 'bus' ? [-L * 0.34, L * 0.34]
+    : [-L * 0.3, L * 0.3];
+  drawWheelsLocal(W, axles, heavyRigid || v.type === 'tow' || v.type === 'bus' ? 8 : 6.5);
   // karoserie
   ctx.fillStyle = v.color;
   rr(ctx, -L / 2, -W / 2, L, W, 4); ctx.fill();
   ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1.5;
   rr(ctx, -L / 2, -W / 2, L, W, 4); ctx.stroke();
   if (v.type === 'truck') {
-    // kabina + korba
-    ctx.fillStyle = 'rgba(255,255,255,0.85)';
-    rr(ctx, -L / 2 + 20, -W / 2 + 2, L - 24, W - 4, 2); ctx.fill();
-    ctx.fillStyle = 'rgba(30,40,60,0.9)';
-    ctx.fillRect(L / 2 - 8, -W / 2 + 2, 4, W - 4);
+    // Pevný nákladní vůz: samostatná skříň a krátká kabina.
+    ctx.fillStyle = v.cargoColor;
+    rr(ctx, -L / 2 + 2, -W / 2 + 1, L * 0.63, W - 2, 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(45,50,54,0.5)'; ctx.lineWidth = 1;
+    for (let x = -L / 2 + 9; x < L * 0.08; x += 10) {
+      ctx.beginPath(); ctx.moveTo(x, -W / 2 + 2); ctx.lineTo(x, W / 2 - 2); ctx.stroke();
+    }
+    ctx.fillStyle = v.color;
+    rr(ctx, L * 0.14, -W / 2, L * 0.36, W, 4); ctx.fill();
+    ctx.fillStyle = 'rgba(20,32,44,0.92)';
+    ctx.fillRect(L / 2 - 7, -W / 2 + 3, 4.5, W - 6);
+    drawMirrorsLocal(W, L / 2 - 10);
+  } else if (v.type === 'tanker') {
+    // Cisterna: válcová lesklá nádrž, plnicí víko a výstražný kosočtverec.
+    ctx.fillStyle = '#32383c';
+    rr(ctx, -L / 2 + 1, -W / 2 + 3, L * 0.68, W - 6, 3); ctx.fill();
+    ctx.fillStyle = v.cargoColor || '#b8bec1';
+    rr(ctx, -L / 2 + 3, -W / 2 + 2, L * 0.63, W - 4, W / 2 - 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(55,62,66,0.65)'; ctx.lineWidth = 1.2;
+    for (let x = -L / 2 + 13; x < L * 0.08; x += 13) {
+      ctx.beginPath(); ctx.moveTo(x, -W / 2 + 3); ctx.lineTo(x, W / 2 - 3); ctx.stroke();
+    }
+    ctx.strokeStyle = 'rgba(255,255,255,0.58)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(-L / 2 + 8, -W * 0.22); ctx.lineTo(L * 0.08, -W * 0.22); ctx.stroke();
+    ctx.fillStyle = '#343a3e';
+    ctx.beginPath(); ctx.arc(-L * 0.12, 0, 3.2, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#f4a62a';
+    ctx.save(); ctx.translate(-L / 2 + 7, 0); ctx.rotate(Math.PI / 4); ctx.fillRect(-3, -3, 6, 6); ctx.restore();
+    ctx.fillStyle = v.color;
+    rr(ctx, L * 0.15, -W / 2, L * 0.35, W, 4); ctx.fill();
+    ctx.fillStyle = 'rgba(20,32,44,0.92)';
+    ctx.fillRect(L / 2 - 7, -W / 2 + 3, 4.5, W - 6);
+    drawMirrorsLocal(W, L / 2 - 10);
+  } else if (v.type === 'garbage') {
+    // Popelářský vůz: žebrovaný lis, zadní násypka a oranžové pracovní majáky.
+    ctx.fillStyle = '#253b31';
+    rr(ctx, -L / 2 + 1, -W / 2 + 1, L * 0.68, W - 2, 3); ctx.fill();
+    ctx.fillStyle = v.color;
+    ctx.beginPath();
+    ctx.moveTo(-L / 2 + 3, -W / 2 + 4); ctx.lineTo(L * 0.12, -W / 2 + 1);
+    ctx.lineTo(L * 0.12, W / 2 - 1); ctx.lineTo(-L / 2 + 3, W / 2 - 4); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(220,235,225,0.35)'; ctx.lineWidth = 1.2;
+    for (let x = -L / 2 + 10; x < L * 0.07; x += 9) {
+      ctx.beginPath(); ctx.moveTo(x, -W / 2 + 4); ctx.lineTo(x, W / 2 - 4); ctx.stroke();
+    }
+    ctx.fillStyle = '#202629';
+    ctx.fillRect(-L / 2 + 1, -W / 2 + 5, 5, W - 10);
+    ctx.strokeStyle = '#c7c9c8'; ctx.lineWidth = 1.8;
+    ctx.strokeRect(-L / 2 - 1, -6, 5, 12);
+    ctx.fillStyle = v.color;
+    rr(ctx, L * 0.14, -W / 2, L * 0.36, W, 4); ctx.fill();
+    ctx.fillStyle = 'rgba(20,32,44,0.92)';
+    ctx.fillRect(L / 2 - 7, -W / 2 + 3, 4.5, W - 6);
+    ctx.fillStyle = '#ffad22';
+    ctx.beginPath(); ctx.arc(L * 0.1, -6, 1.9, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(L * 0.1, 6, 1.9, 0, TAU); ctx.fill();
+    drawMirrorsLocal(W, L / 2 - 10);
+  } else if (v.type === 'tow') {
+    // Odtahovka: sklopná plošina s navijákem, vodicími lištami a hákem.
+    ctx.fillStyle = '#555d62';
+    rr(ctx, -L / 2 + 1, -W / 2 + 2, L * 0.66, W - 4, 2); ctx.fill();
+    ctx.strokeStyle = '#c6ccd0'; ctx.lineWidth = 1;
+    for (const y of [-W * 0.27, W * 0.27]) {
+      ctx.beginPath(); ctx.moveTo(-L / 2 + 4, y); ctx.lineTo(L * 0.1, y); ctx.stroke();
+    }
+    ctx.strokeStyle = '#f3b52c'; ctx.lineWidth = 2;
+    for (let x = -L / 2 + 5; x < -L * 0.2; x += 7) {
+      ctx.beginPath(); ctx.moveTo(x, -W / 2 + 3); ctx.lineTo(x + 5, W / 2 - 3); ctx.stroke();
+    }
+    ctx.fillStyle = '#24292d';
+    ctx.beginPath(); ctx.arc(L * 0.04, 0, 3.5, 0, TAU); ctx.fill();
+    ctx.strokeStyle = '#272c30'; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(L * 0.04, 0); ctx.lineTo(-L * 0.22, 0); ctx.lineTo(-L * 0.3, 3); ctx.stroke();
+    ctx.fillStyle = v.color;
+    rr(ctx, L * 0.15, -W / 2, L * 0.35, W, 4); ctx.fill();
+    ctx.fillStyle = 'rgba(20,32,44,0.92)';
+    ctx.fillRect(L / 2 - 7, -W / 2 + 3, 4.5, W - 6);
+    ctx.fillStyle = '#ffad22';
+    ctx.beginPath(); ctx.arc(L * 0.12, 0, 2.1, 0, TAU); ctx.fill();
+    drawMirrorsLocal(W, L / 2 - 10);
   } else if (v.type === 'bus') {
-    ctx.fillStyle = 'rgba(255,255,255,0.25)';
+    // Linkový autobus: střešní panel, okna, dveře a čelní sklo.
+    ctx.fillStyle = 'rgba(255,255,255,0.14)';
+    rr(ctx, -L * 0.28, -W / 2 + 4, L * 0.55, W - 8, 3); ctx.fill();
+    ctx.fillStyle = 'rgba(220,235,245,0.34)';
     for (let wx = -L / 2 + 8; wx < L / 2 - 10; wx += 10) ctx.fillRect(wx, -W / 2 + 1.5, 6, 2.5);
     for (let wx = -L / 2 + 8; wx < L / 2 - 10; wx += 10) ctx.fillRect(wx, W / 2 - 4, 6, 2.5);
-    ctx.fillStyle = 'rgba(30,40,60,0.9)';
+    ctx.fillStyle = 'rgba(20,32,44,0.92)';
     ctx.fillRect(L / 2 - 7, -W / 2 + 2, 4, W - 4);
+    ctx.strokeStyle = 'rgba(20,25,30,0.65)'; ctx.lineWidth = 1;
+    ctx.strokeRect(L * 0.05, W / 2 - 4.5, 13, 3.5);
+    drawMirrorsLocal(W, L / 2 - 10);
+  } else if (v.type === 'van') {
+    // Dodávka má vysokou souvislou střechu, krátkou kapotu a zadní vrata.
+    ctx.fillStyle = 'rgba(255,255,255,0.16)';
+    rr(ctx, -L * 0.32, -W / 2 + 2, L * 0.58, W - 4, 3); ctx.fill();
+    ctx.fillStyle = 'rgba(20,32,44,0.9)';
+    ctx.fillRect(L * 0.22, -W / 2 + 2, 4.5, W - 4);
+    ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(-L * 0.28, -W / 2 + 2); ctx.lineTo(-L * 0.28, W / 2 - 2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-L / 2 + 4, 0); ctx.lineTo(-L * 0.28, 0); ctx.stroke();
+    drawMirrorsLocal(W, L * 0.18);
   } else {
-    // střecha + skla
-    ctx.fillStyle = 'rgba(255,255,255,0.18)';
-    rr(ctx, -L / 2 + L * 0.22, -W / 2 + 2, L * 0.5, W - 4, 3); ctx.fill();
-    ctx.fillStyle = 'rgba(25,35,55,0.85)';
-    ctx.fillRect(L / 2 - L * 0.32, -W / 2 + 2, 4.5, W - 4);   // čelní sklo
-    ctx.fillRect(-L / 2 + L * 0.2, -W / 2 + 2, 3.5, W - 4);   // zadní sklo
+    // Osobní auto: kapota, kabina se skly, kufr, zrcátka a spáry karoserie.
+    ctx.fillStyle = 'rgba(255,255,255,0.2)';
+    rr(ctx, -L * 0.23, -W / 2 + 2, L * 0.48, W - 4, 4); ctx.fill();
+    ctx.fillStyle = 'rgba(18,31,43,0.9)';
+    ctx.fillRect(L * 0.16, -W / 2 + 2.5, 4.5, W - 5);
+    ctx.fillRect(-L * 0.21, -W / 2 + 2.5, 3.5, W - 5);
+    ctx.strokeStyle = 'rgba(0,0,0,0.32)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(L * 0.32, -W / 2 + 2); ctx.lineTo(L * 0.32, W / 2 - 2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-L * 0.34, -W / 2 + 2); ctx.lineTo(-L * 0.34, W / 2 - 2); ctx.stroke();
+    if (v.id % 4 === 0) {
+      ctx.fillStyle = 'rgba(18,31,43,0.55)';
+      rr(ctx, -4, -W * 0.22, 10, W * 0.44, 2); ctx.fill();
+    }
+    drawMirrorsLocal(W, L * 0.11);
   }
-  // světla
-  ctx.fillStyle = '#ffe9a0';
-  ctx.fillRect(L / 2 - 2, -W / 2 + 1, 2, 4);
-  ctx.fillRect(L / 2 - 2, W / 2 - 5, 2, 4);
-  ctx.fillStyle = v.v < 2 ? '#ff5540' : '#a03028';
-  ctx.fillRect(-L / 2, -W / 2 + 1, 2, 4);
-  ctx.fillRect(-L / 2, W / 2 - 5, 2, 4);
+  drawVehicleLightsLocal(L, W, v.v < 2);
+  drawIndicatorsLocal(v, L, W);
   ctx.restore();
 }
 // sanitka / policie / hasiči — karoserie s pruhem a blikajícími majáky
@@ -1997,6 +2458,18 @@ function drawEmergencyBody(v, L, W) {
   // čelní sklo
   ctx.fillStyle = 'rgba(25,35,55,0.85)';
   ctx.fillRect(L / 2 - L * 0.3, -W / 2 + 2, 4.5, W - 4);
+  drawMirrorsLocal(W, L / 2 - L * 0.34);
+  // označení na střeše: kříž sanitky, policejní panel nebo hasičské skříně
+  if (v.emg === 'ambulance') {
+    ctx.fillStyle = '#d21f26';
+    ctx.fillRect(-L * 0.14, -2, 13, 4); ctx.fillRect(-L * 0.14 + 4.5, -6.5, 4, 13);
+  } else if (v.emg === 'fire') {
+    ctx.strokeStyle = 'rgba(255,255,255,0.75)'; ctx.lineWidth = 2;
+    ctx.strokeRect(-L * 0.27, -W * 0.29, L * 0.34, W * 0.58);
+  } else {
+    ctx.fillStyle = 'rgba(25,35,55,0.42)';
+    rr(ctx, -L * 0.2, -W * 0.3, L * 0.34, W * 0.6, 3); ctx.fill();
+  }
   // majáky: střídavě modrá/červená
   const ph = Math.floor(G.time * 6) % 2 === 0;
   const cols = v.emg === 'police' ? ['#2a7fff', '#2a7fff'] : ['#2a7fff', '#ff3b30'];
@@ -2011,10 +2484,8 @@ function drawEmergencyBody(v, L, W) {
       ctx.restore();
     }
   });
-  // světla
-  ctx.fillStyle = '#ffe9a0';
-  ctx.fillRect(L / 2 - 2, -W / 2 + 1, 2, 4);
-  ctx.fillRect(L / 2 - 2, W / 2 - 5, 2, 4);
+  drawVehicleLightsLocal(L, W, v.v < 2);
+  drawIndicatorsLocal(v, L, W);
 }
 
 // autobus / trolejbus MHD Hradec Králové — červená s krémovým pruhem
@@ -2034,6 +2505,11 @@ function drawMhdBody(v, L, W) {
   // krémový podélný pruh
   ctx.fillStyle = '#f0e6d2';
   ctx.fillRect(-L / 2 + 4, -3, L - 8, 6);
+  // střešní klimatizace a servisní kryty
+  ctx.fillStyle = 'rgba(245,238,220,0.5)';
+  rr(ctx, -L * 0.22, -W * 0.25, L * 0.38, W * 0.5, 3); ctx.fill();
+  ctx.fillStyle = 'rgba(40,45,50,0.35)';
+  rr(ctx, -5, -4, 13, 8, 2); ctx.fill();
   // okna po stranách
   ctx.fillStyle = 'rgba(255,255,255,0.3)';
   for (let wx = -L / 2 + 10; wx < L / 2 - 12; wx += 11) {
@@ -2043,6 +2519,9 @@ function drawMhdBody(v, L, W) {
   // čelní sklo + terč s číslem linky
   ctx.fillStyle = 'rgba(25,35,55,0.9)';
   ctx.fillRect(L / 2 - 7, -W / 2 + 2, 4, W - 4);
+  drawMirrorsLocal(W, L / 2 - 10);
+  ctx.strokeStyle = 'rgba(25,30,35,0.7)'; ctx.lineWidth = 1;
+  ctx.strokeRect(L * 0.03, W / 2 - 4.5, 13, 3.5);
   ctx.fillStyle = '#fff';
   ctx.fillRect(L * 0.28, -5.5, 12, 11);
   ctx.fillStyle = '#000';
@@ -2051,10 +2530,8 @@ function drawMhdBody(v, L, W) {
   ctx.translate(L * 0.28 + 6, 0); ctx.rotate(Math.PI / 2);
   ctx.fillText(String(v.line), 0, 0);
   ctx.restore();
-  // světla
-  ctx.fillStyle = '#ffe9a0';
-  ctx.fillRect(L / 2 - 2, -W / 2 + 1, 2, 4);
-  ctx.fillRect(L / 2 - 2, W / 2 - 5, 2, 4);
+  drawVehicleLightsLocal(L, W, v.v < 2);
+  drawIndicatorsLocal(v, L, W);
 }
 
 function rr(c, x, y, w, h, r) {

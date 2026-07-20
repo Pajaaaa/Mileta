@@ -28,7 +28,7 @@ Dále: klik/tap na semafor přepíná, **P** pauza, **M** hudba, kolečko/pinch 
 
 ## Herní mechaniky
 
-- **Doprava dle reality**: hlavní tah je Sokolská V↔Z, ranní/odpolední špičky, vlny provozu, déšť (snížená adheze → delší brzdné dráhy). Osobáky, motorky, kamiony, autobusy, **kloubové autobusy** (fyzika i kolize po článcích) a trolejbusy.
+- **Doprava dle reality**: hlavní tah je Sokolská V↔Z, ranní/odpolední špičky, vlny provozu, déšť (snížená adheze → delší brzdné dráhy). Osobáky, **osobáky s přívěsným vozíkem**, motorky, dodávky, pevné nákladní vozy, **cisterny, popelářské vozy, odtahovky**, **tahače s návěsem**, vzácné pomalé **traktory s valníkem plným balíků slámy**, autobusy, **kloubové autobusy** a trolejbusy. Dvoudílné soupravy mají samostatnou fyziku a kolizi každého článku; vozidla odbočující vlevo nebo vpravo používají animované blinkry.
 - **Mise IZS**: sanitka/policie/hasiči se sirénou a pulzujícím halo — propusťte do 25 s (+10 / −60). Vzácně **hromadný výjezd IZS**: tři vozidla ze tří směrů na jeden výjezd, jejich trasy se vzájemně kříží — nutno pouštět postupně (do 60 s, +10 za vozidlo +20 bonus / −60 za každé nestihnuté).
 - **Mise MHD**: červené busy a trolejbusy s číslem linky jedou podle jízdního řádu — 45 s na průjezd (+5 / −30). Mise mohou jet rovně, vlevo i vpravo bypassem.
 - **Žádný směr nelze obětovat**: každé rameno má virtuální frontu poptávky „za mapou" a vozidlo stojící přes 80 s začne stát body (−3 každých 5 s). Mise jsou připnuté na vylosované rameno a ucpaný nájezd je nezachrání.
@@ -81,11 +81,11 @@ Malý HTTP server (systemd služba `mileta-api`, `127.0.0.1:2780`, data v `score
 
 ## Nasazení
 
-Statické soubory → `/var/www/mileta/` (nginx, vhost izovan.cz, no-cache na HTML). Skripty se načítají s `?v=N` — **při každém nasazení bumpnout verzi** v `index.html` (aktuálně `v=69`). API → `/opt/mileta-api/` + systemd.
+Statické soubory → `/var/www/mileta/` (nginx, vhost izovan.cz, no-cache na HTML). Skripty se načítají s `?v=N` — **při každém nasazení bumpnout verzi** v `index.html` (aktuálně `v=73`). API → `/opt/mileta-api/` + systemd.
 
 ## Ladění a testy
 
-- URL parametry: `?autostart` (rovnou hrát, zelené přímé směry), `?autostart=13` (výběr ramen), `?ff=35` (odsimulovat 35 s), `?cam=2.4,60,40` (kamera), `?noemg` (bez misí).
+- URL parametry: `?autostart` (rovnou hrát, zelené přímé směry), `?autostart=13` (výběr ramen), `?ff=35` (odsimulovat 35 s), `?cam=2.4,60,40` (kamera), `?noemg` (bez misí), `?veh=semi` (vynutit typ běžného vozidla pro grafický test; platí libovolný klíč z `TYPES`).
 - Konzole: `window.__game` (živý stav), `window.__lastCrash` (poslední kolize vč. snapshotu semaforů).
 - Vyvíjeno s baterií headless testů (node smoke testy kolizní logiky, puppeteer screenshoty UI, simulovaný „lidský" hráč pro balancování obtížnosti) — testovací skripty nejsou součástí repa.
 
