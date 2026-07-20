@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>MILETA — simulátor řízení křižovatky</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚦</text></svg>">
+<meta property="og:title" content="KŘIŽOVATKA MILETA — simulátor řízení semaforů">
+<meta property="og:description" content="Řiďte světelnou signalizaci na křižovatce Mileta v Hradci Králové. Sanitky, MHD, špičky, déšť — a žádné přednosti. Jak dlouho vydržíte bez nehody?">
+<meta property="og:image" content="https://izovan.cz/mileta/og.png">
+<meta property="og:url" content="https://izovan.cz/mileta/">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<style>
+  html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#243b1f;font-family:'Segoe UI',Arial,sans-serif;}
+  #game{position:fixed;inset:0;touch-action:none;cursor:pointer;}
+  .hud{position:fixed;pointer-events:none;color:#fff;text-shadow:0 2px 3px rgba(0,0,0,.8);user-select:none;}
+  #score{top:10px;right:18px;font-family:Impact,'Arial Black',sans-serif;font-size:52px;color:#ffd23a;
+         -webkit-text-stroke:2px #000;letter-spacing:2px;text-align:right;line-height:1;}
+  #score small{display:block;font-size:16px;color:#fff;-webkit-text-stroke:0;letter-spacing:1px;margin-top:2px;}
+  #stats{top:12px;left:16px;font-size:15px;line-height:1.5;opacity:.95;}
+  #hint{bottom:10px;left:0;right:0;text-align:center;font-size:14px;opacity:.85;}
+  #credit{bottom:10px;right:14px;font-size:13px;opacity:.65;}
+  #credit a{color:inherit;text-decoration:underline;pointer-events:auto;}
+  #credit a:hover{color:#ffd23a;opacity:1;}
+  #lbLive{bottom:34px;right:14px;font-size:12px;text-align:left;line-height:1.55;
+          background:rgba(10,14,8,.55);padding:7px 12px;border-radius:10px;max-width:230px;}
+  #lbLive .hdr{color:#ffd23a;font-weight:bold;letter-spacing:1px;margin-bottom:2px;}
+  #lbLive div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:auto;cursor:default;}
+  #lbTip{position:fixed;z-index:9;display:none;background:rgba(10,14,8,.93);color:#fff;
+         border:1px solid rgba(255,210,58,.55);border-radius:8px;padding:8px 12px;
+         font-size:12px;line-height:1.6;pointer-events:none;max-width:360px;
+         white-space:pre-line;text-shadow:0 2px 3px rgba(0,0,0,.8);}
+  #online{bottom:64px;left:16px;font-size:12px;background:rgba(10,14,8,.55);
+          padding:7px 12px;border-radius:10px;}
+  #flowSig{bottom:104px;left:16px;text-align:center;}
+  #flowSig .body{display:inline-block;background:#171a13;border:2px solid rgba(255,210,58,.45);
+                 border-radius:12px;padding:5px 4px;box-shadow:0 3px 10px rgba(0,0,0,.5);}
+  #flowSig .l{display:block;width:24px;height:24px;border-radius:50%;margin:5px;
+              background:#23271f;border:1px solid rgba(0,0,0,.6);}
+  #flowSig[data-state="r"] .l.r{background:#ff3b30;box-shadow:0 0 14px 4px rgba(255,59,48,.75);}
+  #flowSig[data-state="a"] .l.a{background:#ffb320;box-shadow:0 0 14px 4px rgba(255,179,32,.7);}
+  #flowSig[data-state="g"] .l.g{background:#3ddc55;box-shadow:0 0 14px 4px rgba(61,220,85,.7);}
+  #flowSig .cap{font-size:11px;margin-top:3px;opacity:.85;max-width:110px;}
+  #btnPause,#btnMusic{position:fixed;left:16px;z-index:5;background:rgba(15,20,12,.75);
+            color:#fff;border:1px solid rgba(255,210,58,.6);border-radius:8px;
+            font-size:20px;width:52px;height:44px;padding:0;line-height:44px;
+            text-align:center;cursor:pointer;}
+  #btnPause{top:108px;}
+  #btnMusic{top:158px;}
+  #btnPause:hover,#btnMusic:hover{background:rgba(40,50,30,.9);}
+  #title{top:6px;left:0;right:0;text-align:center;font-family:Impact,'Arial Black',sans-serif;
+         font-size:26px;color:#ffd23a;-webkit-text-stroke:1.5px #000;letter-spacing:3px;}
+  #emgBanner{display:none;position:fixed;top:44px;left:50%;transform:translateX(-50%);
+             background:rgba(160,20,20,.92);border:1px solid #fff;border-radius:8px;
+             padding:5px 13px;font-size:14px;font-weight:bold;color:#fff;max-width:min(720px,92vw);
+             text-align:center;text-shadow:0 1px 2px #000;animation:emgPulse 0.8s infinite;z-index:6;}
+  @keyframes emgPulse{0%,100%{box-shadow:0 0 14px 3px rgba(255,60,40,.9);}
+                      50%{box-shadow:0 0 26px 9px rgba(60,120,255,.9);}}
+  #toast{display:none;position:fixed;top:44px;left:50%;transform:translateX(-50%);
+         background:rgba(20,26,16,.88);border:1px solid rgba(255,210,58,.5);border-radius:9px;
+         padding:7px 18px;font-size:16px;color:#fff;text-shadow:0 1px 2px #000;z-index:5;}
+  #replayLbl{display:none;position:fixed;top:44px;left:50%;transform:translateX(-50%);
+             background:rgba(120,10,10,.9);border:1px solid #fff;border-radius:9px;
+             padding:7px 18px;font-size:17px;font-weight:bold;color:#fff;z-index:6;
+             animation:recBlink 1s infinite;}
+  @keyframes recBlink{0%,100%{opacity:1;}50%{opacity:.55;}}
+  #pauseOv{display:none;position:fixed;inset:0;align-items:center;justify-content:center;
+           background:rgba(0,0,0,.35);z-index:4;pointer-events:none;
+           font-family:Impact,'Arial Black',sans-serif;font-size:80px;color:#ffd23a;
+           -webkit-text-stroke:3px #000;letter-spacing:6px;}
+  #lbSave{display:flex;gap:8px;justify-content:center;margin-top:10px;}
+  #lbSave input{flex:1;max-width:220px;padding:9px 12px;font-size:16px;border-radius:8px;
+                border:1px solid #777;background:#1d221a;color:#fff;}
+  #lbSave button{font-family:Impact,'Arial Black',sans-serif;font-size:16px;letter-spacing:1px;
+                 background:#7fb069;color:#111;border:0;border-radius:8px;padding:8px 16px;cursor:pointer;}
+  #lbSave button:hover{background:#9bcf83;}
+  #lbTable table{margin:8px auto 0;border-collapse:collapse;font-size:14px;min-width:300px;}
+  #lbTable td{padding:3px 10px;text-align:left;border-bottom:1px solid rgba(255,255,255,.12);}
+  #lbTable td:nth-child(3),#lbTable td:nth-child(4){text-align:right;}
+  #lbTable tr.me td{color:#ffd23a;font-weight:bold;}
+  .overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+           background:rgba(0,0,0,.55);z-index:10;}
+  .panel{background:rgba(15,20,12,.92);border:2px solid #ffd23a;border-radius:14px;padding:28px 40px;
+         max-width:520px;color:#eee;text-align:center;box-shadow:0 10px 60px rgba(0,0,0,.7);}
+  .panel h1{font-family:Impact,'Arial Black',sans-serif;font-size:54px;margin:0 0 6px;color:#ffd23a;
+            -webkit-text-stroke:2px #000;letter-spacing:3px;}
+  .panel h1.crash{color:#ff4b2e;}
+  .panel p{margin:10px 0;font-size:16px;line-height:1.55;}
+  .panel .big{font-size:30px;color:#ffd23a;font-weight:bold;}
+  .panel button{margin-top:14px;font-family:Impact,'Arial Black',sans-serif;font-size:24px;letter-spacing:2px;
+                background:#ffd23a;color:#111;border:0;border-radius:8px;padding:12px 34px;cursor:pointer;}
+  .panel button:hover{background:#ffe27a;}
+  .panel .sub{font-size:13px;opacity:.7;}
+  #gameover{display:none;}
+  #intro .panel{max-width:min(680px,94vw);max-height:94vh;overflow:auto;
+                box-sizing:border-box;padding:20px 36px 24px;}
+  #intro h1{font-size:42px;}
+  #intro p{font-size:14.5px;margin:8px 0;}
+  #lbFull{display:none;}
+  #lbFull .panel{max-width:min(880px,94vw);padding:18px 26px 22px;}
+  #lbFull h1{font-size:38px;}
+  #lbLive .hdr{pointer-events:auto;cursor:pointer;}
+  #lbLive .hdr:hover{color:#ffe27a;text-decoration:underline;}
+  #lbFullWrap{max-height:min(560px,60vh);overflow:auto;margin-top:10px;
+              border:1px solid rgba(255,255,255,.15);border-radius:8px;}
+  #lbFullTable{border-collapse:collapse;font-size:13px;width:100%;white-space:nowrap;}
+  #lbFullTable th{position:sticky;top:0;background:#20261a;color:#ffd23a;text-align:left;
+                  padding:5px 9px;border-bottom:1px solid rgba(255,210,58,.5);}
+  #lbFullTable td{padding:3px 9px;text-align:left;border-bottom:1px solid rgba(255,255,255,.1);}
+  #lbFullTable th:nth-child(n+3),#lbFullTable td:nth-child(n+3){text-align:right;}
+  #lbFullTable tr.fin td{color:#ffe89a;}
+
+  /* ---------- mobil ---------- */
+  @media (max-width: 700px), (max-height: 500px) {
+    #title{font-size:14px;top:5px;letter-spacing:1.5px;}
+    #score{font-size:28px;top:22px;right:10px;}
+    #score small{font-size:10px;}
+    #stats{font-size:11px;top:8px;left:8px;line-height:1.35;}
+    #hint{display:none;}
+    #credit{font-size:10px;bottom:4px;right:8px;opacity:.55;}
+    #lbLive{bottom:18px;right:8px;font-size:10px;line-height:1.45;padding:5px 8px;
+            max-width:150px;background:rgba(10,14,8,.65);}
+    #lbLive div{pointer-events:none;}   /* dotyk nemá hover — ať panel nepřekáží hraní */
+    #lbTip{display:none !important;}
+    #online{bottom:4px;left:8px;font-size:10px;padding:4px 8px;}
+    #flowSig{bottom:32px;left:8px;}
+    #flowSig .l{width:15px;height:15px;margin:3px;}
+    #flowSig .cap{font-size:9px;max-width:70px;}
+    #btnPause{top:64px;left:8px;font-size:16px;width:42px;height:36px;line-height:36px;}
+    #btnMusic{top:106px;left:8px;font-size:16px;width:42px;height:36px;line-height:36px;}
+    #emgBanner{font-size:11px;padding:4px 8px;top:26px;max-width:94vw;}
+    #toast{font-size:12px;padding:5px 10px;top:26px;max-width:94vw;}
+    #replayLbl{font-size:12px;padding:5px 10px;top:26px;}
+    #pauseOv{font-size:44px;}
+    .overlay{align-items:flex-start;overflow-y:auto;-webkit-overflow-scrolling:touch;}
+    .panel{margin:10px;padding:14px 14px;max-width:none;}
+    .panel h1{font-size:32px;}
+    .panel p{font-size:13px;margin:7px 0;}
+    .panel .big{font-size:22px;}
+    .panel button{font-size:18px;padding:9px 22px;margin-top:8px;}
+    #lbTable table{min-width:0;width:100%;font-size:12px;}
+    #lbFull .panel{padding:12px 8px;}
+    #lbFull h1{font-size:26px;}
+    #lbFullTable{font-size:10px;}
+    #lbFullTable th{padding:4px 5px;}
+    #lbFullTable td{padding:2px 5px;}
+    #lbFullWrap{max-height:66vh;}
+    #lbSave input{font-size:14px;padding:7px 9px;}
+    #lbSave button{font-size:13px;padding:7px 10px;}
+  }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="title" class="hud">KŘIŽOVATKA MILETA</div>
+<div id="score" class="hud">30<small>bodů z 1000</small></div>
+<div id="stats" class="hud"></div>
+<div id="hint" class="hud">Návěstidla: klepnutí, nebo klávesy (sloupec = rameno): <b>Q&nbsp;W&nbsp;E&nbsp;R</b> přímo · <b>A&nbsp;S&nbsp;D&nbsp;F</b> vlevo · <b>Z&nbsp;X&nbsp;C&nbsp;V</b> bypass · kolečko = přiblížení · pravé tlačítko = posun · <b>0</b> = výchozí pohled · <b>P</b> = pauza</div>
+<div id="credit" class="hud">© <a href="mailto:pvlcek@seznam.cz">Pavel Vlček</a> 2026</div>
+<div id="lbLive" class="hud" style="display:none"></div>
+<div id="lbTip"></div>
+<div id="flowSig" class="hud" style="display:none" data-state="g">
+  <div class="body"><span class="l r"></span><span class="l a"></span><span class="l g"></span></div>
+  <div class="cap">průtok: plynulý</div>
+</div>
+<div id="online" class="hud" style="display:none"></div>
+<button id="btnPause" title="Pauza (P)">⏸</button>
+<button id="btnMusic" title="Hudba (M)">🎵</button>
+<div id="emgBanner"></div>
+<div id="toast"></div>
+<div id="replayLbl">● ZÁZNAM NEHODY — klepnutím přeskočíte</div>
+<div id="pauseOv">PAUZA</div>
+
+<div id="intro" class="overlay">
+  <div class="panel">
+    <h1>MILETA</h1>
+    <p><b>Řídíte světelnou signalizaci na křižovatce Mileta v Hradci Králové.</b></p>
+    <p>Ze všech čtyř směrů přijíždějí osobní i nákladní vozidla a motocykly. Každé rameno
+       křižovatky má <b>tři návěstidla</b> a ovládá se klepnutím myší nebo klávesnicí —
+       sloupec kláves odpovídá rameni: přímý směr <b>Q W E R</b>, odbočení vlevo
+       <b>A S D F</b>, pravý bypass <b>Z X C V</b>.</p>
+    <p><b>Vozidla si vzájemně nedávají přednost — kde se dvě trasy potkají, dojde
+       k nehodě a hra okamžitě končí.</b> Odbočení vlevo kříží protisměr — povolte je,
+       jen když protisměr stojí. Vozidla z bypassů se vlévají do hlavního proudu
+       přímo z oblouku.</p>
+    <p>Získáváte <b>body</b>: +1 za každé projeté vozidlo. Pravidelně projíždějí
+       <b>vozidla záchranných složek</b> (+10 včas / <b>−60</b> při zdržení)
+       a <b>autobusy a trolejbusy MHD</b> podle jízdního řádu (+5 / <b>−30</b>) —
+       jedou rovně, vlevo i vpravo po bypassu; sledujte šipku a pokyny v horní liště.
+       Výjimečný <b>hromadný výjezd IZS</b> přijede ze tří směrů na týž výjezd —
+       trasy se kříží, propouštějte postupně (+10 za vozidlo, +20 za komplet včas).
+       <b>Žádný směr nelze obětovat</b>: kolona stojící bez hnutí déle než minutu
+       znamená varování a poté <b>−3 body každých 5 s</b>, dokud směr nepustíte.
+       Začínáte s 30 body — <b>na nule hra končí</b>.</p>
+    <p><b>Cílem je dosáhnout 1000 bodů</b> — tím službu úspěšně dokončíte a hra
+       je dohrána. Obtížnost se postupně zvyšuje; při narůstajících kolonách řidiči
+       troubí a aktuální průtok ukazuje semafor v levém dolním rohu.
+       Nejlepší výsledky se ukládají do <b>žebříčku</b>; hráči, kteří hru dokončí (⭐),
+       soutěží o nejkratší dobu řízení.
+       <br><span style="opacity:.7">Kolečkem myši pohled přiblížíte, pravým tlačítkem jej
+       posunete, klávesa <b>0</b> jej obnoví a <b>P</b> hru pozastaví.</span></p>
+    <button id="btnStart">HRÁT</button>
+    <p class="sub">© Pavel Vlček 2026 · hudba: Kevin MacLeod — Floating Cities (incompetech.com, CC BY 4.0)</p>
+  </div>
+</div>
+
+<div id="gameover" class="overlay">
+  <div class="panel">
+    <h1 class="crash" id="goTitle">DOPRAVNÍ NEHODA!</h1>
+    <p class="big" id="goScore"></p>
+    <p id="goStats"></p>
+    <p class="sub" id="goBest"></p>
+    <div id="lbSave">
+      <input id="playerName" maxlength="24" placeholder="Vaše jméno">
+      <button id="btnSaveScore">ULOŽIT DO ŽEBŘÍČKU</button>
+    </div>
+    <p class="sub" id="lbMsg"></p>
+    <div id="lbTable"></div>
+    <button id="btnCont" style="display:none">POKRAČOVAT V PROVOZU</button>
+    <button id="btnRestart">HRÁT ZNOVU</button>
+    <p class="sub">nebo klávesa Enter</p>
+  </div>
+</div>
+
+<div id="lbFull" class="overlay">
+  <div class="panel">
+    <h1>ŽEBŘÍČEK</h1>
+    <p class="sub">Posledních 50 zaznamenaných služeb, nejnovější nahoře · ⭐ = křižovatka zvládnuta na plný počet bodů</p>
+    <div id="lbFullWrap">
+      <table id="lbFullTable">
+        <thead><tr><th>Datum</th><th>Jméno</th><th>Body</th><th>Čas</th><th>Vozidel</th><th>Kolona</th><th>Zdržení</th><th>IZS</th><th>MHD</th></tr></thead>
+        <tbody id="lbFullBody"></tbody>
+      </table>
+    </div>
+    <p class="sub" id="lbFullMsg"></p>
+    <button id="btnLbClose">ZAVŘÍT</button>
+  </div>
+</div>
+
+<audio id="bgMusic" src="music.mp3" loop preload="auto"></audio>
+<script src="buildings.js?v=69"></script>
+<script src="game.js?v=69"></script>
+</body>
+</html>
