@@ -2973,6 +2973,39 @@ function continueGame() {
   document.getElementById('gameover').style.display = 'none';
   G.running = true;
 }
+// ==================== sdílení ====================
+const SHARE_URL = 'https://izovan.cz/mileta/';
+function shareText() {
+  if (G.won) return `Křižovatka Mileta DOHRÁNA 🏆 1000 bodů za ${fmtTime(G.winTime)}. Zvládnete službu rychleji?`;
+  if (G.over) return `Řízení semaforů na křižovatce Mileta: ${G.score} bodů za ${fmtTime(G.time)} 🚦 Zvládnete to lépe?`;
+  return 'Zvládnete řídit semafory na skutečné křižovatce Mileta v Hradci Králové? 🚦';
+}
+document.querySelectorAll('.shareBtn').forEach(b => {
+  const kind = b.dataset.share;
+  if (kind === 'native' && navigator.share) b.style.display = 'flex';
+  b.addEventListener('click', async () => {
+    const text = shareText(), url = SHARE_URL;
+    if (kind === 'native') {
+      try { await navigator.share({ title: 'KŘIŽOVATKA MILETA', text, url }); } catch (e) {}
+    } else if (kind === 'fb') {
+      window.open('https://www.facebook.com/sharer/sharer.php?u=' + encodeURIComponent(url) +
+                  '&quote=' + encodeURIComponent(text), '_blank', 'noopener');
+    } else if (kind === 'x') {
+      window.open('https://twitter.com/intent/tweet?text=' + encodeURIComponent(text) +
+                  '&url=' + encodeURIComponent(url), '_blank', 'noopener');
+    } else if (kind === 'wa') {
+      window.open('https://wa.me/?text=' + encodeURIComponent(text + ' ' + url), '_blank', 'noopener');
+    } else if (kind === 'copy') {
+      const ok = b.parentElement.querySelector('.shareOk');
+      try {
+        await navigator.clipboard.writeText(text + ' ' + url);
+        ok.textContent = 'Odkaz zkopírován ✔';
+      } catch (e) { ok.textContent = url; }
+      ok.classList.remove('show'); void ok.offsetWidth; ok.classList.add('show');
+    }
+    b.blur();                                 // ať Enter po kliknutí nerestartuje hru
+  });
+});
 document.getElementById('btnStart').addEventListener('click', startGame);
 document.getElementById('btnRestart').addEventListener('click', resetGame);
 document.getElementById('btnCont').addEventListener('click', continueGame);
