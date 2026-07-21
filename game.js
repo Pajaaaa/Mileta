@@ -1031,8 +1031,7 @@ function renderLiveLb(top) {
   const h = document.createElement('div');
   h.className = 'hdr'; h.textContent = '🏆 TOP 10';
   h.title = 'Klepnutím zobrazíte úplný žebříček';
-  h.addEventListener('click', openLbFull);
-  box.appendChild(h);
+  box.appendChild(h);   // klik řeší delegovaný listener na celém #lbLive
   top.slice(0, 10).forEach((e, i) => {
     const row = document.createElement('div');
     row.textContent = `${i + 1}. ${e.s >= WIN_SCORE ? '⭐ ' : ''}${e.n} · ${e.s} b`;
@@ -1564,7 +1563,7 @@ bg.width = bg.height = BG_HALF * 2;
     g.lineTo(152, -1600);
     g.lineTo(152, -196);
     g.lineTo(146, -196);
-    g.quadraticCurveTo(120, -252, 96, -295);
+    g.quadraticCurveTo(124, -252, 96, -295);   // ctrl shodný s bílou hranou v drawRoad — jinak zelený lem přetéká přes čáru
     g.closePath();
     g.fill();
     g.restore();
@@ -1602,7 +1601,7 @@ bg.width = bg.height = BG_HALF * 2;
     g.beginPath();
     g.moveTo(-100, -170);
     g.quadraticCurveTo(-104, -104, -170, -100);
-    g.arc(-190, -190, 96, Math.PI / 2 - 0.12, 0.12, true);
+    g.arc(-190, -190, 96, Math.PI / 2 - 0.30, 0.30, true);   // ořez ±0.30: konce oblouku nesmí přečnívat přes dlážděný lem
     g.closePath();
     g.fill();
     // střední dělicí pás
@@ -1697,9 +1696,10 @@ bg.width = bg.height = BG_HALF * 2;
       seed = 33 + k;
       for (let i = 0; i < 110; i++) {
         const gx = 10 + srand() * 28, gy = -1600 + srand() * 1330;
-        if (gy > -260) continue;
+        const gw = Math.min(srand() * 18 + 4, 36 - gx);   // zrnka nesmí přesáhnout hranu pásu (x=38) do pruhu
+        if (gy > -260 || gw <= 0) continue;
         g.fillStyle = srand() < 0.5 ? 'rgba(38,74,34,0.35)' : 'rgba(110,160,90,0.25)';
-        g.fillRect(gx, gy, srand() * 18 + 4, srand() * 18 + 4);
+        g.fillRect(gx, gy, gw, srand() * 18 + 4);
       }
       g.strokeStyle = 'rgba(255,255,255,0.85)'; g.lineCap = 'butt'; g.setLineDash([]);
       g.lineWidth = 3;
@@ -3006,6 +3006,8 @@ document.querySelectorAll('.shareBtn').forEach(b => {
     b.blur();                                 // ať Enter po kliknutí nerestartuje hru
   });
 });
+// klik kamkoli do TOP 10 panelu = rovnou úplný žebříček (tooltip jen na hover)
+document.getElementById('lbLive').addEventListener('click', () => { lbTipHide(); openLbFull(); });
 document.getElementById('btnStart').addEventListener('click', startGame);
 document.getElementById('btnRestart').addEventListener('click', resetGame);
 document.getElementById('btnCont').addEventListener('click', continueGame);

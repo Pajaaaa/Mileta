@@ -24,9 +24,10 @@
   #credit a{color:inherit;text-decoration:underline;pointer-events:auto;}
   #credit a:hover{color:#ffd23a;opacity:1;}
   #lbLive{bottom:34px;right:14px;font-size:12px;text-align:left;line-height:1.55;
-          background:rgba(10,14,8,.55);padding:7px 12px;border-radius:10px;max-width:230px;}
+          background:rgba(10,14,8,.55);padding:7px 12px;border-radius:10px;max-width:230px;
+          pointer-events:auto;cursor:pointer;}   /* klik kamkoli = úplný žebříček */
   #lbLive .hdr{color:#ffd23a;font-weight:bold;letter-spacing:1px;margin-bottom:2px;}
-  #lbLive div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:auto;cursor:default;}
+  #lbLive div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:auto;cursor:pointer;}
   #lbTip{position:fixed;z-index:9;display:none;background:rgba(10,14,8,.93);color:#fff;
          border:1px solid rgba(255,210,58,.55);border-radius:8px;padding:8px 12px;
          font-size:12px;line-height:1.6;pointer-events:none;max-width:360px;
@@ -159,7 +160,7 @@
     #hint{display:none;}
     #credit{font-size:10px;bottom:4px;right:8px;opacity:.55;}
     #lbLive{bottom:18px;right:8px;font-size:10px;line-height:1.45;padding:5px 8px;
-            max-width:150px;background:rgba(10,14,8,.65);}
+            max-width:150px;background:rgba(10,14,8,.65);pointer-events:none;}   /* na mobilu klikatelná jen hlavička */
     #lbLive div{pointer-events:none;}   /* dotyk nemá hover — ať panel nepřekáží hraní */
     #lbTip{display:none !important;}
     #online{bottom:4px;left:8px;font-size:10px;padding:4px 8px;}
@@ -320,7 +321,7 @@
 </div>
 
 <audio id="bgMusic" src="music.mp3" loop preload="auto"></audio>
-<script src="buildings.js?v=78"></script>
-<script src="game.js?v=78"></script>
+<script src="buildings.js?v=79"></script>
+<script src="game.js?v=79"></script>
 </body>
 </html>
