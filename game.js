@@ -514,7 +514,7 @@ const ARM_NAMES = ['Hradecká', 'Sokolská', 'Zborovská', 'Sokolská'];
 const G = {
   running: false, over: false, paused: false,
   won: false, winTime: 0,
-  curQueue: 0, flowState: null,
+  curQueue: 0, flowState: null, starveActive: false,
   time: 0, score: 0, signals: makeSignals(),
   vehicles: [], popups: [], explosions: [], smoke: [],
   shake: 0, slowmo: 1, crashAt: 0,
@@ -550,7 +550,7 @@ function missionBusy() {
 function resetGame() {
   G.running = true; G.over = false; G.paused = false;
   G.won = false; G.winTime = 0; G.winStats = null; lbSaved = false;
-  G.curQueue = 0; G.flowState = null;
+  G.curQueue = 0; G.flowState = null; G.starveActive = false;
   G.time = 0; G.score = START_SCORE; G.passed = 0;
   G.signals = makeSignals();
   G.vehicles = []; G.popups = []; G.explosions = []; G.smoke = [];
@@ -1199,6 +1199,8 @@ function updateSpawning(dt) {
       }
     } else if (mw[k] < 10) G.starveWarned[k] = false;
   }
+  // některé rameno stojí tak dlouho, že už tikají pokuty → semafor průtoku bliká
+  G.starveActive = mw.some(w => w > STARVE_T);
   // mise: zásahové vozidlo + MHD (s rostoucí obtížností jezdí častěji).
   // Mise si při naplánování vylosuje rameno a DRŽÍ ho — dřív si při plném
   // nájezdu přelosovala jiný směr, takže ucpání ramene nic nestálo. Když se
@@ -2795,19 +2797,22 @@ function updateHud() {
 // semafor průtoku vlevo dole — podle nejdelší aktuální kolony (vzorkuje se à 2 s ve step).
 // Limity: zelená ≤ 4 vozidla, žlutá 5–9, červená ≥ 10 (od 10 řidiči troubí = zácpa).
 // Hystereze proti blikání na hraně: zpět na lepší stav až při ≤ 3 / ≤ 7.
-const FLOW_CAP = { g: 'průtok: plynulý', a: 'průtok: houstne', r: 'průtok: ZÁCPA' };
+const FLOW_CAP = { g: 'průtok: plynulý', a: 'průtok: houstne', r: 'průtok: ZÁCPA',
+                   p: 'průtok: KOLONA STOJÍ, body dolů!' };
 function updateFlowSig() {
   const q = G.curQueue;
   let st = G.flowState || 'g';
   if (st === 'g') st = q >= 10 ? 'r' : q >= 5 ? 'a' : 'g';
   else if (st === 'a') st = q >= 10 ? 'r' : q <= 3 ? 'g' : 'a';
   else st = q <= 3 ? 'g' : q <= 7 ? 'a' : 'r';
+  G.flowState = st;
+  // fáze pokut za stojící kolonu přebíjí běžné stavy blikající červenou
+  const shown = G.starveActive ? 'p' : st;
   const el = document.getElementById('flowSig');
   el.style.display = 'block';
-  if (st !== G.flowState) {
-    G.flowState = st;
-    el.dataset.state = st;
-    el.querySelector('.cap').textContent = FLOW_CAP[st];
+  if (shown !== el.dataset.state) {
+    el.dataset.state = shown;
+    el.querySelector('.cap').textContent = FLOW_CAP[shown];
   }
 }
 function updateStats() {
