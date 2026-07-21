@@ -111,6 +111,30 @@
                 box-sizing:border-box;padding:20px 36px 16px;}
   #intro h1{font-size:42px;}
   #intro p{font-size:14.5px;margin:8px 0;}
+  #intro .lead{margin:4px 0 10px;}
+  .introWarn{background:rgba(160,30,20,.16);border:1px solid rgba(255,90,60,.5);
+             border-radius:9px;padding:8px 14px;font-size:13.5px;line-height:1.5;
+             margin:10px 0;text-align:left;}
+  .introGrid{display:grid;grid-template-columns:1fr 1fr;gap:2px 26px;
+             text-align:left;margin:12px 0 2px;}
+  .introGrid section{min-width:0;}
+  .introGrid h3{font-family:Impact,'Arial Black',sans-serif;font-size:15px;
+                letter-spacing:2px;color:#ffd23a;margin:0 0 6px;font-weight:normal;}
+  kbd{display:inline-block;min-width:13px;padding:2px 4px;margin:1px 2px 1px 0;
+      border-radius:4px;text-align:center;background:#252d1e;color:#ffe9a8;
+      border:1px solid #5a6b4a;border-bottom-width:2px;
+      font:600 11.5px/1.25 'Segoe UI',Arial,sans-serif;}
+  .keysT{border-collapse:collapse;}
+  .keysT td{padding:2px 0;font-size:13px;}
+  .keysT td:first-child{padding-right:10px;white-space:nowrap;}
+  .scoreT{border-collapse:collapse;width:100%;}
+  .scoreT td{padding:2.5px 0;font-size:13px;border-bottom:1px dashed rgba(255,255,255,.13);}
+  .scoreT tr:last-child td{border-bottom:0;}
+  .scoreT td:last-child{text-align:right;white-space:nowrap;font-weight:bold;padding-left:12px;}
+  .plus{color:#9bcf83;}
+  .minus{color:#ff8266;}
+  #intro .note{font-size:12.5px;opacity:.75;line-height:1.45;margin:7px 0 0;}
+  #intro .goal{font-size:13.5px;line-height:1.5;margin:10px 0 0;}
   #lbFull{display:none;}
   #lbFull .panel{max-width:min(880px,94vw);padding:18px 26px 22px;}
   #lbFull h1{font-size:38px;}
@@ -167,6 +191,12 @@
     #lbFullWrap{max-height:66vh;}
     #lbSave input{font-size:14px;padding:7px 9px;}
     #lbSave button{font-size:13px;padding:7px 10px;}
+    .introGrid{grid-template-columns:1fr;gap:10px;}
+    .introWarn{font-size:12px;padding:7px 10px;}
+    .keysT td,.scoreT td{font-size:12px;}
+    #intro .note{font-size:11.5px;}
+    #intro .goal{font-size:12px;}
+    #intro .lead{font-size:12.5px;}
   }
 </style>
 </head>
@@ -195,31 +225,43 @@
 <div id="intro" class="overlay">
   <div class="panel">
     <h1>MILETA</h1>
-    <p><b>Řídíte světelnou signalizaci na křižovatce Mileta v Hradci Králové.</b></p>
-    <p>Ze všech čtyř směrů přijíždějí osobní i nákladní vozidla a motocykly. Každé rameno
-       křižovatky má <b>tři návěstidla</b> a ovládá se klepnutím myší nebo klávesnicí —
-       sloupec kláves odpovídá rameni: přímý směr <b>Q W E R</b>, odbočení vlevo
-       <b>A S D F</b>, pravý bypass <b>Z X C V</b>.</p>
-    <p><b>Vozidla si vzájemně nedávají přednost — kde se dvě trasy potkají, dojde
-       k nehodě a hra okamžitě končí.</b> Odbočení vlevo kříží protisměr — povolte je,
-       jen když protisměr stojí. Vozidla z bypassů se vlévají do hlavního proudu
-       přímo z oblouku.</p>
-    <p>Získáváte <b>body</b>: +1 za každé projeté vozidlo. Pravidelně projíždějí
-       <b>vozidla záchranných složek</b> (+10 včas / <b>−60</b> při zdržení)
-       a <b>autobusy a trolejbusy MHD</b> podle jízdního řádu (+5 / <b>−30</b>) —
-       jedou rovně, vlevo i vpravo po bypassu; sledujte šipku a pokyny v horní liště.
-       Výjimečný <b>hromadný výjezd IZS</b> přijede ze tří směrů na týž výjezd —
-       trasy se kříží, propouštějte postupně (+10 za vozidlo, +20 za komplet včas).
-       <b>Žádný směr nelze obětovat</b>: kolona stojící bez hnutí déle než minutu
-       znamená varování a poté <b>−3 body každých 5 s</b>, dokud směr nepustíte.
-       Začínáte s 30 body — <b>na nule hra končí</b>.</p>
-    <p><b>Cílem je dosáhnout 1000 bodů</b> — tím službu úspěšně dokončíte a hra
-       je dohrána. Obtížnost se postupně zvyšuje; při narůstajících kolonách řidiči
-       troubí a aktuální průtok ukazuje semafor v levém dolním rohu.
-       Nejlepší výsledky se ukládají do <b>žebříčku</b>; hráči, kteří hru dokončí (⭐),
-       soutěží o nejkratší dobu řízení.
-       <br><span style="opacity:.7">Kolečkem myši pohled přiblížíte, pravým tlačítkem jej
-       posunete, klávesa <b>0</b> jej obnoví a <b>P</b> hru pozastaví.</span></p>
+    <p class="lead"><b>Řídíte světelnou signalizaci na křižovatce Mileta v Hradci Králové.</b><br>
+       Ze všech čtyř směrů přijíždějí osobní i nákladní vozidla a motocykly.</p>
+    <div class="introWarn">⚠️ <b>Vozidla si vzájemně nedávají přednost — kde se dvě trasy
+       potkají, dojde k nehodě a hra okamžitě končí.</b> Odbočení vlevo kříží protisměr —
+       povolte je, jen když protisměr stojí; vozidla z bypassů se vlévají do hlavního
+       proudu přímo z oblouku.</div>
+    <div class="introGrid">
+      <section>
+        <h3>OVLÁDÁNÍ</h3>
+        <table class="keysT">
+          <tr><td><kbd>Q</kbd><kbd>W</kbd><kbd>E</kbd><kbd>R</kbd></td><td>přímý směr</td></tr>
+          <tr><td><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><kbd>F</kbd></td><td>odbočení vlevo</td></tr>
+          <tr><td><kbd>Z</kbd><kbd>X</kbd><kbd>C</kbd><kbd>V</kbd></td><td>pravý bypass</td></tr>
+        </table>
+        <p class="note">Sloupec kláves = rameno křižovatky; každé rameno má tři návěstidla
+           a přepínat je lze i klepnutím. Kolečko pohled přiblíží, pravé tlačítko jej
+           posune, <kbd>0</kbd> obnoví a <kbd>P</kbd> hru pozastaví.</p>
+      </section>
+      <section>
+        <h3>BODOVÁNÍ</h3>
+        <table class="scoreT">
+          <tr><td>projeté vozidlo</td><td><span class="plus">+1</span></td></tr>
+          <tr><td>záchranné složky včas / zdržené</td><td><span class="plus">+10</span> / <span class="minus">−60</span></td></tr>
+          <tr><td>MHD podle jízdního řádu</td><td><span class="plus">+5</span> / <span class="minus">−30</span></td></tr>
+          <tr><td>hromadný výjezd IZS, za vozidlo / komplet</td><td><span class="plus">+10</span> / <span class="plus">+20</span></td></tr>
+          <tr><td>kolona stojící déle než minutu</td><td><span class="minus">−3</span> / 5 s</td></tr>
+        </table>
+        <p class="note">Sanitky i MHD jedou rovně, vlevo i po bypassu — sledujte šipku
+           a pokyny v horní liště. Hromadný výjezd přijíždí ze tří směrů najednou,
+           propouštějte postupně. Žádný směr nelze obětovat.
+           Začínáte s 30 body — <b>na nule hra končí</b>.</p>
+      </section>
+    </div>
+    <p class="goal"><b>Cílem je dosáhnout 1000 bodů</b> — tím službu úspěšně dokončíte.
+       Obtížnost se postupně zvyšuje; při narůstajících kolonách řidiči troubí a průtok
+       ukazuje semafor vlevo dole. Nejlepší výsledky se ukládají do <b>žebříčku</b>;
+       hráči, kteří hru dokončí (⭐), soutěží o nejkratší dobu řízení.</p>
     <button id="btnStart">HRÁT</button>
     <div class="shareBar">
       <span class="shareLbl">Sdílet hru:</span>
@@ -277,7 +319,7 @@
 </div>
 
 <audio id="bgMusic" src="music.mp3" loop preload="auto"></audio>
-<script src="buildings.js?v=76"></script>
-<script src="game.js?v=76"></script>
+<script src="buildings.js?v=77"></script>
+<script src="game.js?v=77"></script>
 </body>
 </html>
