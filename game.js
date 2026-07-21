@@ -1671,7 +1671,7 @@ bg.width = bg.height = BG_HALF * 2;
     drawArrow(g, -24, -290, 'left');
     drawArrow(g, -52, -290, k === 2 ? 'left' : 'up');
     drawArrow(g, -80, -290, 'up');
-    drawArrow(g, -124, -300, 'right');
+    drawArrow(g, -115, -300, 'right');   // střed bypassového pruhu (-94..-136)
     // vodicí čáry levých odbočení křižovatkou (dle cílových pruhů) — jen decentní
     g.lineWidth = 2; g.strokeStyle = 'rgba(255,255,255,0.14)';
     g.setLineDash([10, 12]);
@@ -1865,11 +1865,13 @@ function drawArrow(g, x, y, dir) {
   g.fillStyle = 'rgba(255,255,255,0.8)';
   g.strokeStyle = 'rgba(255,255,255,0.8)';
   g.lineWidth = 5; g.lineCap = 'butt';
-  g.beginPath(); g.moveTo(0, -18); g.lineTo(0, dir === 'up' ? 8 : 0); g.stroke();
   if (dir === 'up') {
+    g.beginPath(); g.moveTo(0, -18); g.lineTo(0, 8); g.stroke();
     g.beginPath(); g.moveTo(0, 18); g.lineTo(-7, 4); g.lineTo(7, 4); g.closePath(); g.fill();
   } else {
     const sgn = dir === 'left' ? 1 : -1;   // vlevo = k mediánu (+x), bypass vpravo = od něj
+    g.translate(-sgn * 7, 0);              // ohyb i hlava míří na jednu stranu — vycentrovat na osu pruhu
+    g.beginPath(); g.moveTo(0, -18); g.lineTo(0, 0); g.stroke();
     g.beginPath(); g.moveTo(0, 0); g.quadraticCurveTo(0, 10, sgn * 10, 10); g.stroke();
     g.beginPath(); g.moveTo(sgn * 16, 10); g.lineTo(sgn * 6, 16); g.lineTo(sgn * 6, 4); g.closePath(); g.fill();
   }
