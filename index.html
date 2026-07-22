@@ -49,6 +49,22 @@
     50%{background:#23271f;box-shadow:none;}
   }
   #flowSig .cap{font-size:11px;margin-top:3px;opacity:.85;max-width:110px;}
+  /* sponzor izovan.cz — pilulka ve hře (dole uprostřed) a pruh v intru */
+  #sponsorHud{bottom:34px;left:50%;transform:translateX(-50%);display:flex;align-items:center;
+              gap:9px;background:rgba(10,14,8,.55);padding:5px 13px;border-radius:10px;
+              font-size:12px;color:#fff;text-decoration:none;pointer-events:auto;cursor:pointer;
+              white-space:nowrap;}
+  #sponsorHud:hover{background:rgba(35,45,25,.85);}
+  #sponsorHud img{height:22px;background:#fff;border-radius:5px;padding:2px 5px;display:block;}
+  #sponsorHud b{color:#ffd23a;}
+  .sponsorBar{display:flex;align-items:center;justify-content:center;gap:12px;
+              margin:6px auto 0;padding:5px 14px;max-width:460px;
+              border:1px solid rgba(255,210,58,.4);border-radius:10px;
+              background:rgba(255,255,255,.06);color:#eee;text-decoration:none;
+              font-size:13px;line-height:1.45;text-align:left;}
+  .sponsorBar:hover{background:rgba(255,255,255,.13);}
+  .sponsorBar img{height:36px;background:#fff;border-radius:6px;padding:3px 7px;flex:none;display:block;}
+  .sponsorBar b{color:#ffd23a;}
   #btnPause,#btnMusic{position:fixed;left:16px;z-index:5;background:rgba(15,20,12,.75);
             color:#fff;border:1px solid rgba(255,210,58,.6);border-radius:8px;
             font-size:20px;width:52px;height:44px;padding:0;line-height:44px;
@@ -173,6 +189,11 @@
     #flowSig{bottom:32px;left:8px;}
     #flowSig .l{width:15px;height:15px;margin:3px;}
     #flowSig .cap{font-size:9px;max-width:70px;}
+    #sponsorHud{bottom:20px;font-size:9px;gap:5px;padding:3px 8px;
+                white-space:normal;text-align:center;max-width:56vw;}
+    #sponsorHud img{height:15px;padding:1px 3px;}
+    .sponsorBar{font-size:11px;gap:8px;padding:5px 9px;margin-top:8px;}
+    .sponsorBar img{height:26px;}
     #btnPause{top:64px;left:8px;font-size:16px;width:42px;height:36px;line-height:36px;}
     #btnMusic{top:106px;left:8px;font-size:16px;width:42px;height:36px;line-height:36px;}
     #emgBanner{font-size:11px;padding:4px 8px;top:26px;max-width:94vw;}
@@ -216,6 +237,10 @@
 <div id="stats" class="hud"></div>
 <div id="hint" class="hud">Návěstidla: klepnutí, nebo klávesy (sloupec = rameno): <b>Q&nbsp;W&nbsp;E&nbsp;R</b> přímo · <b>A&nbsp;S&nbsp;D&nbsp;F</b> vlevo · <b>Z&nbsp;X&nbsp;C&nbsp;V</b> bypass · kolečko = přiblížení · pravé tlačítko = posun · <b>0</b> = výchozí pohled · <b>P</b> = pauza</div>
 <div id="credit" class="hud">© <a href="mailto:pvlcek@seznam.cz">Pavel Vlček</a> 2026</div>
+<a id="sponsorHud" class="hud" href="https://www.izovan.cz" target="_blank" rel="noopener">
+  <img src="izovan-logo.png" alt="IZOVAN">
+  <span>provoz sponzoruje <b>www.izovan.cz</b> · termoclony na okna do aut a dodávek na míru</span>
+</a>
 <div id="lbLive" class="hud" style="display:none"></div>
 <div id="lbTip"></div>
 <div id="flowSig" class="hud" style="display:none" data-state="g">
@@ -270,6 +295,11 @@
        Obtížnost se postupně zvyšuje; při narůstajících kolonách řidiči troubí a průtok
        ukazuje semafor vlevo dole. Nejlepší výsledky se ukládají do <b>žebříčku</b>;
        hráči, kteří hru dokončí (⭐), soutěží o nejkratší dobu řízení.</p>
+    <a class="sponsorBar" href="https://www.izovan.cz" target="_blank" rel="noopener">
+      <img src="izovan-logo.png" alt="IZOVAN">
+      <span>Provoz křižovatky sponzoruje <b>www.izovan.cz</b><br>
+            termoclony na okna do aut a dodávek na míru</span>
+    </a>
     <button id="btnStart">HRÁT</button>
     <div class="shareBar">
       <span class="shareLbl">Sdílet hru:</span>
