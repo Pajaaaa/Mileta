@@ -24,6 +24,17 @@ const EX = [24, 52, 80, 124];
 // Hradeckou se odbočuje z pravého průběžného pruhu na signál „rovně“.
 const NO_BYPASS = 1;
 function hasSig(k, key) { return !(k === NO_BYPASS && key === 'R'); }
+// Krátké bypassové pruhy podle skutečnosti: na Hradecké (arm 0) a Zborovské (arm 2)
+// se pravý pruh odděluje od vnějšího průběžného až kus před křižovatkou (y0→y1,
+// lokální souřadnice nájezdu); do té doby jedou vozidla vpravo ve společné koloně.
+// Samostatný pravý pruh po celé délce má jen Sokolská od západu (arm 3).
+const FLARE = { 0: { y0: -560, y1: -450, tip: -390 }, 2: { y0: -440, y1: -340, tip: -296 } };
+// vnější hrana vozovky na nájezdové straně ramene k ve vzdálenosti y
+function inboundEdge(k, y) {
+  if (k === NO_BYPASS) return -96;
+  const f = FLARE[k];
+  return f && y < f.y0 ? -96 : -138;
+}
 function sameLane(a, b) { return a === b || (!!a.laneGroup && a.laneGroup === b.laneGroup); }
 
 const TYPES = {
@@ -372,7 +383,14 @@ const PATHS = [];
       // arm 1 bypass se vlévá přímo do jediného průběžného pruhu Hradecké (y=-52),
       // ostatní bypassy zůstávají ve vlastním výjezdovém pruhu (y=-80)
       const outY = (k === 1) ? -52 : -80;
-      const raw = samplePts([{ x: LX[3], y: -SPAWN }, { x: LX[3], y: -190 }])
+      const fl = FLARE[k];
+      const lead = fl
+        ? samplePts([{ x: LX[2], y: -SPAWN }, { x: LX[2], y: fl.y0 }])
+            .concat(bezier({ x: LX[2], y: fl.y0 }, { x: LX[2], y: (fl.y0 + fl.y1) / 2 },
+                           { x: LX[3], y: (fl.y0 + fl.y1) / 2 }, { x: LX[3], y: fl.y1 }, 16))
+            .concat(samplePts([{ x: LX[3], y: fl.y1 }, { x: LX[3], y: -190 }]))
+        : samplePts([{ x: LX[3], y: -SPAWN }, { x: LX[3], y: -190 }]);
+      const raw = lead
         .concat(arcPts(-190, -190, 66, 0, Math.PI / 2, 24))
         .concat(bezier({ x: -190, y: LX[3] }, { x: -228, y: LX[3] }, { x: -228, y: outY }, { x: -265, y: outY }, 20))
         .concat(samplePts([{ x: -265, y: outY }, { x: -1300, y: outY }]));
@@ -380,6 +398,11 @@ const PATHS = [];
       // stopčára bypassu je AŽ ZA zatáčkou, kousek před napojením
       p.sStop = nearestS(p, armXform(k, -218, LX[3]));
       p.curveCap = { from: SPAWN - 260, to: SPAWN - 40, v: 72 };
+      if (fl) {
+        // společný nájezd s vnějším průběžným pruhem až do konce rozpletu
+        lanes[2].laneGroup = p.laneGroup = 'T' + k;
+        lanes[2].laneForkS = p.laneForkS = SPAWN + fl.y1 - 60;
+      }
       lanes.push(p);
     }
     PATHS.push(lanes);
@@ -606,7 +629,7 @@ function buildVehicleSpec(arm) {
     else laneIdx = 3;
   } else {
     if (r < 0.22) laneIdx = 0;
-    else if (r < 0.77) laneIdx = Math.random() < (arm === NO_BYPASS ? 0.7 : 0.5) ? 1 : 2;
+    else if (r < 0.77) laneIdx = Math.random() < (arm === NO_BYPASS || FLARE[arm] ? 0.7 : 0.5) ? 1 : 2;
     else laneIdx = 3;
   }
   let path = PATHS[arm][laneIdx];
@@ -1609,12 +1632,13 @@ bg.width = bg.height = BG_HALF * 2;
     if (k !== NO_BYPASS) {
     g.fillStyle = '#9d998c';
     g.beginPath();
-    g.moveTo(-102, -470);
+    const tipY = FLARE[k] ? FLARE[k].tip : -470;
+    g.moveTo(-102, tipY);
     g.lineTo(-96, -165);
     g.quadraticCurveTo(-96, -96, -165, -96);
     g.lineTo(-190, -102);   // špička končí na hraně oblouku, do bypassu nezasahuje
     g.arc(-190, -190, 88, Math.PI / 2, 0, true);
-    g.lineTo(-102, -460);
+    g.lineTo(-102, tipY + 10);
     g.closePath();
     g.fill();
     // tráva uvnitř velkého rohu ostrůvku (drží se uvnitř, pruh sahá do r88)
@@ -1656,9 +1680,27 @@ bg.width = bg.height = BG_HALF * 2;
     }
     g.setLineDash([]);
     // oddělení pravého odbočovacího (bypassového) pruhu: přerušovaná čára
+    const fl = FLARE[k];
+    if (fl) {
+      const ym = (fl.y0 + fl.y1) / 2;
+      g.fillStyle = '#4a7c43';
+      g.beginPath();
+      g.moveTo(-96, -1600); g.lineTo(-96, fl.y0 - 20);
+      g.bezierCurveTo(-96, ym, -138, ym, -138, fl.y1 + 10);
+      g.lineTo(-152, fl.y1 + 10); g.lineTo(-152, -1600);
+      g.closePath(); g.fill();
+      seed = 140 + k;
+      for (let i = 0; i < 90; i++) {
+        const gx = -150 + srand() * 34, gy = -1600 + srand() * (1600 + fl.y0 - 40);
+        g.fillStyle = srand() < 0.5 ? 'rgba(38,74,34,0.35)' : 'rgba(110,160,90,0.25)';
+        g.fillRect(gx, gy, Math.min(srand() * 18 + 4, -98 - gx), srand() * 18 + 4);
+      }
+    }
     g.lineWidth = 2.5;
     g.setLineDash([14, 14]);
-    if (k !== NO_BYPASS) { g.beginPath(); g.moveTo(-94, -1600); g.lineTo(-94, -480); g.stroke(); }
+    if (k !== NO_BYPASS) {
+      g.beginPath(); g.moveTo(-94, fl ? fl.y1 + 6 : -1600); g.lineTo(-94, fl ? fl.tip - 8 : -480); g.stroke();
+    }
     g.setLineDash([]);
     // okraj vozovky na výjezdové straně
     g.lineWidth = 3;
@@ -1672,7 +1714,11 @@ bg.width = bg.height = BG_HALF * 2;
     // jejíž hrana (146,-190) je v tomto frame (-190,-146).
     if (k !== NO_BYPASS) {
       g.beginPath();
-      g.moveTo(-136, -1600);
+      if (fl) {
+        const ym = (fl.y0 + fl.y1) / 2;
+        g.moveTo(-94, -1600); g.lineTo(-94, fl.y0 - 20);
+        g.bezierCurveTo(-94, ym, -136, ym, -136, fl.y1 + 10);
+      } else g.moveTo(-136, -1600);
       g.lineTo(-136, -215);
       g.bezierCurveTo(-136, -175, -150, -146, -196, -146);
       g.stroke();
@@ -1952,7 +1998,7 @@ function drawEnvStubs(g) {
   for (const s of E.stubs) {
     g.save();
     g.rotate(s.k * Math.PI / 2);
-    const x0 = s.s > 0 ? (s.k === 0 ? 68 : 96) : -180, x1 = s.s > 0 ? 180 : (s.k === NO_BYPASS ? -96 : -138);
+    const x0 = s.s > 0 ? (s.k === 0 ? 68 : 96) : -180, x1 = s.s > 0 ? 180 : inboundEdge(s.k, s.y);
     g.fillStyle = '#8d897f';                                  // obrubník jako u bočních ulic
     g.fillRect(x0, s.y - s.w / 2 - 2.5, x1 - x0, s.w + 5);
     g.fillStyle = '#45484b';
