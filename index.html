@@ -235,7 +235,7 @@
 <div id="title" class="hud">KŘIŽOVATKA MILETA</div>
 <div id="score" class="hud">30<small>bodů z 1000</small></div>
 <div id="stats" class="hud"></div>
-<div id="hint" class="hud">Návěstidla: klepnutí, nebo klávesy (sloupec = rameno): <b>Q&nbsp;W&nbsp;E&nbsp;R</b> přímo · <b>A&nbsp;S&nbsp;D&nbsp;F</b> vlevo · <b>Z&nbsp;X&nbsp;C&nbsp;V</b> bypass · kolečko = přiblížení · pravé tlačítko = posun · <b>0</b> = výchozí pohled · <b>P</b> = pauza</div>
+<div id="hint" class="hud">Návěstidla: klepnutí, nebo klávesy (sloupec = rameno): <b>Q&nbsp;W&nbsp;E&nbsp;R</b> přímo · <b>A&nbsp;S&nbsp;D&nbsp;F</b> vlevo · <b>Z&nbsp;C&nbsp;V</b> bypass · kolečko = přiblížení · pravé tlačítko = posun · <b>0</b> = výchozí pohled · <b>P</b> = pauza</div>
 <div id="credit" class="hud">© <a href="mailto:pvlcek@seznam.cz">Pavel Vlček</a> 2026</div>
 <a id="sponsorHud" class="hud" href="https://www.izovan.cz" target="_blank" rel="noopener">
   <span>provoz sponzoruje</span>
@@ -270,10 +270,10 @@
         <table class="keysT">
           <tr><td><kbd>Q</kbd><kbd>W</kbd><kbd>E</kbd><kbd>R</kbd></td><td>přímý směr</td></tr>
           <tr><td><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><kbd>F</kbd></td><td>odbočení vlevo</td></tr>
-          <tr><td><kbd>Z</kbd><kbd>X</kbd><kbd>C</kbd><kbd>V</kbd></td><td>pravý bypass</td></tr>
+          <tr><td><kbd>Z</kbd><kbd style="visibility:hidden">X</kbd><kbd>C</kbd><kbd>V</kbd></td><td>pravý bypass</td></tr>
         </table>
-        <p class="note">Sloupec kláves = rameno křižovatky; každé rameno má tři návěstidla
-           a přepínat je lze i klepnutím. Kolečko pohled přiblíží, pravé tlačítko jej
+        <p class="note">Sloupec kláves = rameno; od východu bypass není, vpravo se tam jede na
+           <kbd>W</kbd>. Návěstidla lze přepínat i klepnutím. Kolečko pohled přiblíží, pravé tlačítko jej
            posune, <kbd>0</kbd> obnoví a <kbd>P</kbd> hru pozastaví.</p>
       </section>
       <section>
@@ -357,7 +357,7 @@
 </div>
 
 <audio id="bgMusic" src="music.mp3" loop preload="auto"></audio>
-<script src="buildings.js?v=83"></script>
-<script src="game.js?v=83"></script>
+<script src="buildings.js?v=84"></script>
+<script src="game.js?v=84"></script>
 </body>
 </html>

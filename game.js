@@ -20,6 +20,11 @@ const ROT = 38 * Math.PI / 180;  // natočení scény jako na fotce
 const LX = [-24, -52, -80, -124];
 // pruhy výjezdu: [z levých odbočení, rovně, rovně, bypass]
 const EX = [24, 52, 80, 124];
+// Podle skutečnosti: od Sokolské z východu (arm 1) pravý bypass NENÍ — vpravo na
+// Hradeckou se odbočuje z pravého průběžného pruhu na signál „rovně“.
+const NO_BYPASS = 1;
+function hasSig(k, key) { return !(k === NO_BYPASS && key === 'R'); }
+function sameLane(a, b) { return a === b || (!!a.laneGroup && a.laneGroup === b.laneGroup); }
 
 const TYPES = {
   car:   { len: 42, wid: 19, vmax: 150, acc: 75,  brk: 170, p: 0.345 },
@@ -351,9 +356,19 @@ const PATHS = [];
         lanes.push(buildPath(k, raw, { move: 'T', signal: true, sigKey: 'T', sStop: sStopStraight }));
       }
     }
-    // bypass vpravo: mimo řízenou křižovatku; do hlavního pruhu ústí ROVNOU
-    // ze zatáčky, bez připojovacího pruhu — rizikové místo
-    {
+    if (k === NO_BYPASS) {
+      // bez bypassu: pravé odbočení sdílí vnější průběžný pruh i jeho signál (T),
+      // za stopčárou se stáčí rohem křižovatky do jediného pruhu Hradecké
+      const outY = -52;
+      const raw = samplePts([{ x: LX[2], y: -SPAWN }, { x: LX[2], y: STOPY }])
+        .concat(bezier({ x: LX[2], y: STOPY }, { x: LX[2], y: -92 }, { x: -112, y: outY }, { x: -172, y: outY }, 30))
+        .concat(samplePts([{ x: -172, y: outY }, { x: -1300, y: outY }]));
+      const p = buildPath(k, raw, { move: 'R', signal: true, sigKey: 'T', sStop: sStopStraight, outY });
+      p.curveCap = { from: p.sStop - 30, to: p.sStop + 190, v: 72 };
+      lanes[2].laneGroup = p.laneGroup = 'T' + k;
+      lanes[2].laneForkS = p.laneForkS = p.sStop;
+      lanes.push(p);
+    } else {
       // arm 1 bypass se vlévá přímo do jediného průběžného pruhu Hradecké (y=-52),
       // ostatní bypassy zůstávají ve vlastním výjezdovém pruhu (y=-80)
       const outY = (k === 1) ? -52 : -80;
@@ -361,7 +376,7 @@ const PATHS = [];
         .concat(arcPts(-190, -190, 66, 0, Math.PI / 2, 24))
         .concat(bezier({ x: -190, y: LX[3] }, { x: -228, y: LX[3] }, { x: -228, y: outY }, { x: -265, y: outY }, 20))
         .concat(samplePts([{ x: -265, y: outY }, { x: -1300, y: outY }]));
-      const p = buildPath(k, raw, { move: 'R', signal: true, sigKey: 'R', outY });
+      const p = buildPath(k, raw, { move: 'R', signal: true, sigKey: 'R', outY, bypass: true });
       // stopčára bypassu je AŽ ZA zatáčkou, kousek před napojením
       p.sStop = nearestS(p, armXform(k, -218, LX[3]));
       p.curveCap = { from: SPAWN - 260, to: SPAWN - 40, v: 72 };
@@ -466,7 +481,7 @@ const KEYMAP = {
   'q': [0, 'T'], 'w': [1, 'T'], 'e': [2, 'T'], 'r': [3, 'T'],
   '1': [0, 'T'], '2': [1, 'T'], '3': [2, 'T'], '4': [3, 'T'],
   'a': [0, 'L'], 's': [1, 'L'], 'd': [2, 'L'], 'f': [3, 'L'],
-  'z': [0, 'R'], 'x': [1, 'R'], 'c': [2, 'R'], 'v': [3, 'R'],
+  'z': [0, 'R'], 'c': [2, 'R'], 'v': [3, 'R'],
   'y': [0, 'R'],
 };
 const SIG_LABEL = { T: ['Q', 'W', 'E', 'R'], L: ['A', 'S', 'D', 'F'], R: ['Z', 'X', 'C', 'V'] };
@@ -591,7 +606,7 @@ function buildVehicleSpec(arm) {
     else laneIdx = 3;
   } else {
     if (r < 0.22) laneIdx = 0;
-    else if (r < 0.77) laneIdx = Math.random() < 0.5 ? 1 : 2;
+    else if (r < 0.77) laneIdx = Math.random() < (arm === NO_BYPASS ? 0.7 : 0.5) ? 1 : 2;
     else laneIdx = 3;
   }
   let path = PATHS[arm][laneIdx];
@@ -623,9 +638,7 @@ function buildVehicleSpec(arm) {
 // sdílejí nájezdový pruh)
 function placeVehicle(spec) {
   for (const v of G.vehicles) {
-    const sameLane = v.path === spec.path ||
-      (spec.path.laneGroup && v.path.laneGroup === spec.path.laneGroup);
-    if (sameLane && v.s < 150 + spec.def.len) return false;
+    if (sameLane(v.path, spec.path) && v.s < 150 + spec.def.len) return false;
   }
   G.vehicles.push(spec);
   return true;
@@ -658,9 +671,9 @@ function updateVehicle(v, dt) {
     // zelenou nemá (mezičas po přepnutí fáze); bypassů se netýká. Kontrola běží
     // i při žluté a PŘEBIJE amber-commit — jinak rychlé auto vletí do obsazené
     // křižovatky.
-    if (!mustStop && (st === 'green' || st === 'amber') && p.move !== 'R' && nose > p.sStop - 220) {
+    if (!mustStop && (st === 'green' || st === 'amber') && !p.bypass && nose > p.sStop - 220) {
       for (const o of G.vehicles) {
-        if (o === v || o.crashed || o.path.move === 'R') continue;
+        if (o === v || o.crashed || o.path.bypass) continue;
         const perp = ((o.arm - v.arm) & 1) === 1;
         // protilehlé rameno je konflikt, když právě jeden z dvojice odbočuje
         // vlevo (levé kříží protisměr — oběma směry!)
@@ -1183,7 +1196,7 @@ function updateSpawning(dt) {
   // STARVE_WARN s → varování, přes STARVE_T s → pokuta à STARVE_TICK s
   const mw = [0, 0, 0, 0], mp = [null, null, null, null];
   for (const v of G.vehicles) {
-    if (v.laneIdx === 3 || v.crashed || v.emg) continue;
+    if (v.path.bypass || v.crashed || v.emg) continue;
     if (v.wait > mw[v.arm]) { mw[v.arm] = v.wait; mp[v.arm] = v.pose; }
   }
   for (let k = 0; k < 4; k++) {
@@ -1287,7 +1300,7 @@ function spawnMission(which, forcedArm) {
     veh = { type: 'mhd', mhd: kind, line: pick(MHD_LINES), color: '#d21f26',
             counted: false, deadline: G.time + MHD_TIMEOUT };
   }
-  for (const o of G.vehicles) if (o.path === path && o.s < 200 + def.len) return false;
+  for (const o of G.vehicles) if (sameLane(o.path, path) && o.s < 200 + def.len) return false;
   G.vehicles.push(Object.assign({
     id: vehId++, arm, laneIdx, path, def,
     s: 10, v: def.vmax * 0.9,
@@ -1295,7 +1308,7 @@ function spawnMission(which, forcedArm) {
     pose: pathPose(path, 10),
   }, veh));
   if (which === 'emg') {
-    G.emg = { arm, deadline: G.time + EMG_TIMEOUT, kind: veh.emg, move: path.move };
+    G.emg = { arm, deadline: G.time + EMG_TIMEOUT, kind: veh.emg, move: path.move, sigKey: path.sigKey };
     AudioFX.sirenStart();
   } else {
     G.mhd = { arm, deadline: G.time + MHD_TIMEOUT, kind: veh.mhd, move: path.move };
@@ -1320,7 +1333,7 @@ function spawnMultiEmg() {
   // místo musí být na VŠECH třech vjezdech naráz, jinak zkusit později
   for (let i = 0; i < 3; i++) {
     const def = EMG_TYPES[kinds[i]];
-    for (const o of G.vehicles) if (o.path === paths[i] && o.s < 200 + def.len) return false;
+    for (const o of G.vehicles) if (sameLane(o.path, paths[i]) && o.s < 200 + def.len) return false;
   }
   const deadline = G.time + EMGM_TIMEOUT;
   for (let i = 0; i < 3; i++) {
@@ -1541,6 +1554,7 @@ bg.width = bg.height = BG_HALF * 2;
   g.fillRect(-RW, -BG_HALF, RW * 2, BG_HALF * 2);
   g.fillRect(-BG_HALF, -RW, BG_HALF * 2, RW * 2);
   for (let k = 0; k < 4; k++) {   // výplň rohů mezi pásy (fillet bypassu)
+    if (k === NO_BYPASS) continue;
     g.beginPath();
     const c = armXform(k, -190, -190);
     const s0 = armXform(k, -138, -190), s1 = armXform(k, -190, -138);
@@ -1580,6 +1594,7 @@ bg.width = bg.height = BG_HALF * 2;
   g.lineWidth = 44;
   g.lineCap = 'butt';
   for (let k = 0; k < 4; k++) {
+    if (k === NO_BYPASS) continue;
     const c = armXform(k, -190, -190);
     g.beginPath();
     g.arc(c.x, c.y, 66, k * Math.PI / 2, k * Math.PI / 2 + Math.PI / 2);
@@ -1591,6 +1606,7 @@ bg.width = bg.height = BG_HALF * 2;
     g.save();
     g.setTransform(1, 0, 0, 1, BG_HALF, BG_HALF);
     g.rotate(k * Math.PI / 2);
+    if (k !== NO_BYPASS) {
     g.fillStyle = '#9d998c';
     g.beginPath();
     g.moveTo(-102, -470);
@@ -1609,6 +1625,7 @@ bg.width = bg.height = BG_HALF * 2;
     g.arc(-190, -190, 96, Math.PI / 2 - 0.30, 0.30, true);   // ořez ±0.30: konce oblouku nesmí přečnívat přes dlážděný lem
     g.closePath();
     g.fill();
+    }
     // střední dělicí pás
     g.fillStyle = '#9d998c';
     g.beginPath(); g.moveTo(-7, -440); g.lineTo(7, -440); g.lineTo(7, -180);
@@ -1641,7 +1658,7 @@ bg.width = bg.height = BG_HALF * 2;
     // oddělení pravého odbočovacího (bypassového) pruhu: přerušovaná čára
     g.lineWidth = 2.5;
     g.setLineDash([14, 14]);
-    g.beginPath(); g.moveTo(-94, -1600); g.lineTo(-94, -480); g.stroke();
+    if (k !== NO_BYPASS) { g.beginPath(); g.moveTo(-94, -1600); g.lineTo(-94, -480); g.stroke(); }
     g.setLineDash([]);
     // okraj vozovky na výjezdové straně
     g.lineWidth = 3;
@@ -1653,12 +1670,13 @@ bg.width = bg.height = BG_HALF * 2;
     // Konec sedí PŘESNĚ na začátek hrany zúžení výjezdu sousedního ramene:
     // v tomto frame (146,-196)→(-196,-146); bypass k=1 ústí na Hradeckou,
     // jejíž hrana (146,-190) je v tomto frame (-190,-146).
-    g.beginPath();
-    g.moveTo(-136, -1600);
-    g.lineTo(-136, -215);
-    if (k === 1) g.bezierCurveTo(-136, -175, -155, -150, -190, -146);
-    else g.bezierCurveTo(-136, -175, -150, -146, -196, -146);
-    g.stroke();
+    if (k !== NO_BYPASS) {
+      g.beginPath();
+      g.moveTo(-136, -1600);
+      g.lineTo(-136, -215);
+      g.bezierCurveTo(-136, -175, -150, -146, -196, -146);
+      g.stroke();
+    }
     // hrana zúžení výjezdu podél skutečné travnaté hrany (Hradecká má vlastní)
     if (k !== 0) {
       g.lineWidth = 3;
@@ -1667,15 +1685,15 @@ bg.width = bg.height = BG_HALF * 2;
     // stopčára přes L+T1+T2 a zvlášť přes bypass
     g.lineWidth = 8;
     g.beginPath(); g.moveTo(-92, -164); g.lineTo(-12, -164); g.stroke();
-    g.beginPath(); g.moveTo(-218, -142); g.lineTo(-218, -106); g.stroke();
+    if (k !== NO_BYPASS) { g.beginPath(); g.moveTo(-218, -142); g.lineTo(-218, -106); g.stroke(); }
     // šipky v pruzích (Zborovská k=2: dvě levé + jeden přímý)
     drawArrow(g, -24, -200, 'left');
     drawArrow(g, -52, -200, k === 2 ? 'left' : 'up');
-    drawArrow(g, -80, -200, 'up');
+    drawArrow(g, -80, -200, k === NO_BYPASS ? 'upright' : 'up');
     drawArrow(g, -24, -290, 'left');
     drawArrow(g, -52, -290, k === 2 ? 'left' : 'up');
-    drawArrow(g, -80, -290, 'up');
-    drawArrow(g, -115, -300, 'right');   // střed bypassového pruhu (-94..-136)
+    drawArrow(g, -80, -290, k === NO_BYPASS ? 'upright' : 'up');
+    if (k !== NO_BYPASS) drawArrow(g, -115, -300, 'right');   // střed bypassového pruhu (-94..-136)
     // vodicí čáry levých odbočení křižovatkou (dle cílových pruhů) — jen decentní
     g.lineWidth = 2; g.strokeStyle = 'rgba(255,255,255,0.14)';
     g.setLineDash([10, 12]);
@@ -1717,10 +1735,17 @@ bg.width = bg.height = BG_HALF * 2;
       // hranu jediného pruhu — žádný záliv ani vykousnutí
       g.fillStyle = '#4a7c43';
       g.beginPath();
-      g.moveTo(146, -190);
-      g.quadraticCurveTo(110, -236, 66, -272);
-      g.lineTo(66, -1600); g.lineTo(152, -1600); g.lineTo(152, -190);
+      g.moveTo(236, -94);
+      g.quadraticCurveTo(66, -94, 66, -262);
+      g.lineTo(66, -1600); g.lineTo(152, -1600); g.lineTo(152, -152);
+      g.lineTo(1600, -152); g.lineTo(1600, -94);
       g.closePath(); g.fill();
+      seed = 78;
+      for (let i = 0; i < 110; i++) {
+        const gx = 240 + srand() * 1340, gy = -150 + srand() * 44;
+        g.fillStyle = srand() < 0.5 ? 'rgba(38,74,34,0.35)' : 'rgba(110,160,90,0.25)';
+        g.fillRect(gx, gy, srand() * 18 + 4, Math.min(srand() * 18 + 4, -96 - gy));
+      }
       seed = 77;
       for (let i = 0; i < 130; i++) {
         const gx = 66 + srand() * 54, gy = -1600 + srand() * 1350;
@@ -1730,8 +1755,8 @@ bg.width = bg.height = BG_HALF * 2;
       }
       g.strokeStyle = 'rgba(255,255,255,0.85)'; g.lineCap = 'butt'; g.setLineDash([]);
       g.lineWidth = 3;
-      g.beginPath(); g.moveTo(146, -190);
-      g.quadraticCurveTo(110, -236, 66, -272);
+      g.beginPath(); g.moveTo(1600, -94); g.lineTo(236, -94);
+      g.quadraticCurveTo(66, -94, 66, -262);
       g.lineTo(66, -1600); g.stroke();
       for (const ay of [-620, -1000]) {
         g.save(); g.translate(52, ay); g.rotate(Math.PI); drawArrow(g, 0, 0, 'up'); g.restore();
@@ -1927,7 +1952,7 @@ function drawEnvStubs(g) {
   for (const s of E.stubs) {
     g.save();
     g.rotate(s.k * Math.PI / 2);
-    const x0 = s.s > 0 ? (s.k === 0 ? 68 : 96) : -180, x1 = s.s > 0 ? 180 : -138;
+    const x0 = s.s > 0 ? (s.k === 0 ? 68 : 96) : -180, x1 = s.s > 0 ? 180 : (s.k === NO_BYPASS ? -96 : -138);
     g.fillStyle = '#8d897f';                                  // obrubník jako u bočních ulic
     g.fillRect(x0, s.y - s.w / 2 - 2.5, x1 - x0, s.w + 5);
     g.fillStyle = '#45484b';
@@ -2089,9 +2114,14 @@ function drawArrow(g, x, y, dir) {
   g.fillStyle = 'rgba(255,255,255,0.8)';
   g.strokeStyle = 'rgba(255,255,255,0.8)';
   g.lineWidth = 5; g.lineCap = 'butt';
-  if (dir === 'up') {
+  if (dir === 'up' || dir === 'upright') {
     g.beginPath(); g.moveTo(0, -18); g.lineTo(0, 8); g.stroke();
     g.beginPath(); g.moveTo(0, 18); g.lineTo(-7, 4); g.lineTo(7, 4); g.closePath(); g.fill();
+    if (dir === 'upright') {             // sdružená šipka rovně + vpravo
+      g.lineWidth = 4;
+      g.beginPath(); g.moveTo(0, -8); g.quadraticCurveTo(0, 0, -8, 0); g.stroke();
+      g.beginPath(); g.moveTo(-15, 0); g.lineTo(-7, 5.5); g.lineTo(-7, -5.5); g.closePath(); g.fill();
+    }
   } else {
     const sgn = dir === 'left' ? 1 : -1;   // vlevo = k mediánu (+x), bypass vpravo = od něj
     g.translate(-sgn * 7, 0);              // ohyb i hlava míří na jednu stranu — vycentrovat na osu pruhu
@@ -2815,7 +2845,7 @@ function drawSignalHead(sig, small) {
 //  • levá k × bypass k+2 (sdílený výjezdový pruh)
 function conflictSet() {
   const s = new Set();
-  const g = (k, key) => G.signals[k][key].state === 'green';
+  const g = (k, key) => hasSig(k, key) && G.signals[k][key].state === 'green';
   const mark = (a, b) => { s.add(a); s.add(b); };
   for (let k = 0; k < 4; k++) {
     if (g(k, 'R') && g((k + 1) % 4, 'T')) mark(k + 'R', ((k + 1) % 4) + 'T');
@@ -2833,6 +2863,7 @@ function conflictSet() {
 function drawSignalGlows() {
   for (let k = 0; k < 4; k++) {
     for (const key of SIG_KEYS) {
+      if (!hasSig(k, key)) continue;
       const sig = G.signals[k][key];
       ctx.save();
       ctx.rotate(k * Math.PI / 2);
@@ -2847,6 +2878,7 @@ function drawSignals() {
   const blink = Math.floor(G.time * 3) % 2 === 0;
   for (let k = 0; k < 4; k++) {
     for (const key of SIG_KEYS) {
+      if (!hasSig(k, key)) continue;
       const sig = G.signals[k][key];
       const pos = armXform(k, SIG_POS[key].x, SIG_POS[key].y);
       ctx.save();
@@ -2872,6 +2904,7 @@ function drawSignalLabels() {
   const confl2 = conflictSet();
   for (let k = 0; k < 4; k++) {
     for (const key of SIG_KEYS) {
+      if (!hasSig(k, key)) continue;
       const pos = armXform(k, LABEL_OFF[key].x, LABEL_OFF[key].y);
       const sp = worldToScreen(pos.x, pos.y);
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
@@ -3057,7 +3090,7 @@ function updateStats() {
   if (G.emgM && !G.over) {
     const left = Math.max(0, Math.ceil(G.emgM.deadline - G.time));
     const rem = G.vehicles.filter(o => o.emgM && !o.missionDone && !o.crashed);
-    const labs = rem.map(o => `${EMG_TYPES[o.emg].icon} ${SIG_LABEL[o.path.move][o.arm]}`);
+    const labs = rem.map(o => `${EMG_TYPES[o.emg].icon} ${SIG_LABEL[o.path.sigKey][o.arm]}`);
     banner.style.display = 'block';
     banner.textContent = `🚨 HROMADNÝ VÝJEZD IZS na výjezd ${G.emgM.exit + 1} `
       + `(${STREETS[G.emgM.exit]})! Trasy se kříží — uvolňujte postupně: `
@@ -3069,7 +3102,8 @@ function updateStats() {
     const dir = G.emg.move === 'L'
       ? `odbočuje vlevo — uvolněte ${SIG_LABEL.L[G.emg.arm]}`
       : G.emg.move === 'R'
-      ? `odbočuje vpravo bypassem — uvolněte ${SIG_LABEL.R[G.emg.arm]}`
+      ? (G.emg.sigKey === 'R' ? `odbočuje vpravo bypassem — uvolněte ${SIG_LABEL.R[G.emg.arm]}`
+                              : `odbočuje vpravo — uvolněte ${SIG_LABEL.T[G.emg.arm]}`)
       : `jede přímo — uvolněte ${SIG_LABEL.T[G.emg.arm]}`;
     banner.textContent = `${d.icon} ${d.name} ze směru ${G.emg.arm + 1} (${STREETS[G.emg.arm]}) ${dir}! ⏱ ${left} s`;
   } else banner.style.display = 'none';
@@ -3090,6 +3124,7 @@ function tryToggleAt(sx, sy, touch) {
   let best = null, bestD = 1e9;
   for (let k = 0; k < 4; k++) {
     for (const key of SIG_KEYS) {
+      if (!hasSig(k, key)) continue;
       const pos = armXform(k, SIG_POS[key].x, SIG_POS[key].y);
       const sp = worldToScreen(pos.x, pos.y);
       const d = Math.hypot(sp.x - sx, sp.y - sy);
