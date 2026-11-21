@@ -1515,6 +1515,9 @@ bg.width = bg.height = BG_HALF * 2;
     g.fillRect(x, y, srand() * 26 + 4, srand() * 26 + 4);
   }
 
+  // ---- skutečné okolí: plochy, boční ulice a cesty (pod herními silnicemi)
+  drawEnvGround(g);
+
   // ---- chodníky/stezky podél silnic + diagonální (podchodové rampy v rozích)
   g.strokeStyle = '#a8a396'; g.lineCap = 'round';
   g.lineWidth = 14;
@@ -1737,56 +1740,11 @@ bg.width = bg.height = BG_HALF * 2;
     g.restore();
   }
 
-  // ---- okolí podle reality (OSM data v buildings.js)
-  // areál FN (jihozápad podél Zborovské) srovnat rovnoběžně s ulicí:
-  // polygon se otočí kolem těžiště tak, aby nejdelší hrana byla v ose ulice
-  function polyCenter(pts) {
-    let cx = 0, cy = 0;
-    for (const [x, y] of pts) { cx += x; cy += y; }
-    return [cx / pts.length, cy / pts.length];
-  }
-  function snapPoly(pts) {
-    let bi = 0, bl = 0;
-    for (let i = 0; i < pts.length - 1; i++) {
-      const dx = pts[i + 1][0] - pts[i][0], dy = pts[i + 1][1] - pts[i][1];
-      const l = dx * dx + dy * dy;
-      if (l > bl) { bl = l; bi = i; }
-    }
-    const ang = Math.atan2(pts[bi + 1][1] - pts[bi][1], pts[bi + 1][0] - pts[bi][0]);
-    const rot = Math.round(ang / (Math.PI / 2)) * (Math.PI / 2) - ang;
-    const [cx, cy] = polyCenter(pts);
-    const c = Math.cos(rot), s = Math.sin(rot);
-    return pts.map(([x, y]) =>
-      [cx + (x - cx) * c - (y - cy) * s, cy + (x - cx) * s + (y - cy) * c]);
-  }
-  const inFN = pts => { const [cx, cy] = polyCenter(pts); return cy > 140 && cx < -60; };
-  const builds = (window.REAL_BUILDINGS || []).map(b =>
-    inFN(b.p) ? Object.assign({}, b, { p: snapPoly(b.p) }) : b);
-  const parking = (window.REAL_PARKING || []).map(p => inFN(p) ? snapPoly(p) : p);
-  // parkoviště pod budovami
-  for (const pts of parking) {
-    g.fillStyle = '#54575a';
-    polyPath(g, pts); g.fill();
-    g.strokeStyle = 'rgba(255,255,255,0.15)'; g.lineWidth = 2;
-    polyPath(g, pts); g.stroke();
-  }
-  // budovy: stín, fasáda, střecha (styl podle typu a podlažnosti)
+  // ---- okolí podle reality (data v buildings.js, generuje tools/gen-okoli.py)
+  drawEnvStubs(g);
+  const builds = window.REAL_BUILDINGS || [];
   builds.forEach((b, i) => drawRealBuilding(g, b, i));
-  // stromy (vyhýbají se budovám)
-  const bboxes = builds.map(b => {
-    let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
-    for (const [x, y] of b.p) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
-    return [x0 - 20, y0 - 20, x1 + 20, y1 + 20];
-  });
-  seed = 4242;
-  for (let i = 0; i < 70; i++) {
-    const x = (srand() * 2 - 1) * 1550, y = (srand() * 2 - 1) * 1550;
-    const r = srand() * 16 + 14;
-    if (Math.abs(x) < 195 || Math.abs(y) < 195) continue;
-    if (Math.hypot(x, y) > 1600) continue;
-    if (bboxes.some(bb => x > bb[0] && x < bb[2] && y > bb[1] && y < bb[3])) continue;
-    drawTree(g, x, y, r);
-  }
+  drawEnvTop(g, builds);
   // názvy ulic
   g.fillStyle = 'rgba(255,255,255,0.55)';
   g.font = 'italic bold 30px Georgia';
@@ -1807,38 +1765,302 @@ function polyPath(g, pts) {
   for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], pts[i][1]);
   g.closePath();
 }
-function drawRealBuilding(g, b, i) {
-  const BUILD_ACCENTS = ['#c23b3b', '#3bb0c2', '#e0a13c', '#7fb069'];
-  const pts = b.p;
-  let cx = 0, cy = 0;
-  for (const [x, y] of pts) { cx += x; cy += y; }
-  cx /= pts.length; cy /= pts.length;
-  let st;
-  if (b.l >= 7) st = { wall: '#a9a69e', roof: '#cfccc4', acc: BUILD_ACCENTS[i % BUILD_ACCENTS.length] };
-  else if (b.t === 'school' || b.t === 'civic' || b.t === 'university' || b.t === 'dormitory')
-    st = { wall: '#a89878', roof: '#d0c4a4' };
-  else if (b.t === 'industrial' || b.t === 'warehouse' || b.t === 'commercial')
-    st = { wall: '#8d939a', roof: '#b4bac0' };
-  else if (b.l <= 1) st = { wall: '#84807a', roof: '#9c9890' };
-  else st = { wall: '#93887c', roof: '#ac5a40' };            // rodinné domy: cihlová střecha
-  const sh = 4 + b.l * 1.4;                                  // stín podle výšky
+// ==================== skutečné okolí (REAL_ENV / REAL_BUILDINGS / REAL_PARKING) ====================
+function pointInPoly(x, y, pts) {
+  let ins = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const xi = pts[i][0], yi = pts[i][1], xj = pts[j][0], yj = pts[j][1];
+    if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) ins = !ins;
+  }
+  return ins;
+}
+function polyBox(pts) {
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (const [x, y] of pts) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+  return [x0, y0, x1, y1];
+}
+function polyArea(pts) {
+  let a = 0;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) a += pts[j][0] * pts[i][1] - pts[i][0] * pts[j][1];
+  return Math.abs(a) / 2;
+}
+// směr nejdelší hrany (osa budovy / parkoviště / hřiště)
+function polyAxis(pts) {
+  let ang = 0, bl = 0;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const dx = pts[i][0] - pts[j][0], dy = pts[i][1] - pts[j][1], l = dx * dx + dy * dy;
+    if (l > bl) { bl = l; ang = Math.atan2(dy, dx); }
+  }
+  return ang;
+}
+// dlaždice s jemným šumem jako výplň ploch
+function texPattern(g, base, specks, n) {
+  const S = 160, c = document.createElement('canvas');
+  c.width = c.height = S;
+  const x = c.getContext('2d');
+  x.fillStyle = base; x.fillRect(0, 0, S, S);
+  for (let i = 0; i < n; i++) {
+    x.fillStyle = specks[i % specks.length];
+    x.fillRect(srand() * S, srand() * S, srand() * 11 + 2, srand() * 11 + 2);
+  }
+  return g.createPattern(c, 'repeat') || base;
+}
+function strokeLines(g, arr, style, width, dash) {
+  g.strokeStyle = style; g.lineCap = 'round'; g.lineJoin = 'round';
+  g.setLineDash(dash || []);
+  for (const l of arr) {
+    const p = l.p;
+    g.lineWidth = typeof width === 'function' ? width(l) : width;
+    g.beginPath(); g.moveTo(p[0][0], p[0][1]);
+    for (let i = 1; i < p.length; i++) g.lineTo(p[i][0], p[i][1]);
+    g.stroke();
+  }
+  g.setLineDash([]);
+}
+function drawParking(g, pts) {
+  const PARKED_COLORS = ['#c9ccd0', '#8e949b', '#2f3338', '#b9bcc0', '#7c2f2c', '#30486b', '#e4e5e6', '#5a5f66', '#3e5a48', '#a39a86'];
+  g.fillStyle = '#585b5e';
+  polyPath(g, pts); g.fill();
+  const [x0, y0, x1, y1] = polyBox(pts);
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, R = Math.hypot(x1 - x0, y1 - y0) / 2 + 20;
+  const ang = polyAxis(pts);
   g.save();
-  g.translate(sh, sh * 1.15);
-  g.fillStyle = 'rgba(0,0,0,0.28)';
-  polyPath(g, pts); g.fill();
+  polyPath(g, pts); g.clip();
+  g.translate(cx, cy); g.rotate(ang);
+  // dvouřady kolmých stání (12 px = 2,7 m) s jízdním pruhem mezi nimi, v části stojí auta
+  const c = Math.cos(-ang), s = Math.sin(-ang);
+  const inside = (lx, ly) => pointInPoly(cx + lx * c + ly * s, cy - lx * s + ly * c, pts);
+  for (let y = -R + (R % 76); y < R; y += 76) {
+    g.strokeStyle = 'rgba(255,255,255,0.20)'; g.lineWidth = 1.1;
+    g.beginPath(); g.moveTo(-R, y); g.lineTo(R, y);
+    for (let x = -R; x < R; x += 12) { g.moveTo(x, y - 21); g.lineTo(x, y + 21); }
+    g.stroke();
+    for (let x = -R + 6; x < R; x += 12) {
+      for (const sgn of [-1, 1]) {
+        if (srand() > 0.5) continue;
+        const py = y + sgn * 11.5;
+        if (!inside(x - 5, py - 10) || !inside(x + 5, py + 10) || !inside(x + 5, py - 10) || !inside(x - 5, py + 10)) continue;
+        g.fillStyle = 'rgba(0,0,0,0.25)';
+        g.fillRect(x - 3.2, py - 8.3, 8.6, 18.6);
+        g.fillStyle = PARKED_COLORS[Math.floor(srand() * PARKED_COLORS.length)];
+        g.fillRect(x - 4.3, py - 9.3, 8.6, 18.6);
+        g.fillStyle = 'rgba(20,28,36,0.55)';           // čelní a zadní sklo
+        g.fillRect(x - 3.4, py - 5.5 * sgn - 1.6, 6.8, 3.2);
+        g.fillRect(x - 3.4, py + 5 * sgn - 1.2, 6.8, 2.4);
+      }
+    }
+  }
   g.restore();
-  g.fillStyle = st.wall;
-  polyPath(g, pts); g.fill();
-  g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = 2.5;
+  g.strokeStyle = 'rgba(255,255,255,0.16)'; g.lineWidth = 2;
   polyPath(g, pts); g.stroke();
-  // střecha = polygon smrsklý ke středu
-  const roof = pts.map(([x, y]) => [cx + (x - cx) * 0.8, cy + (y - cy) * 0.8]);
-  g.fillStyle = st.roof;
-  polyPath(g, roof); g.fill();
-  if (st.acc) {                                              // barevný pruh panelák
-    g.strokeStyle = st.acc; g.globalAlpha = 0.65; g.lineWidth = 7;
-    polyPath(g, roof); g.stroke();
-    g.globalAlpha = 1;
+}
+function drawPitch(g, p) {
+  const pts = p.p;
+  const col = p.c === 'c' ? '#c0704c' : p.c === 'g' ? '#5d9b4b' : '#3c8876';
+  g.fillStyle = col; polyPath(g, pts); g.fill();
+  const [x0, y0, x1, y1] = polyBox(pts);
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, R = Math.hypot(x1 - x0, y1 - y0) / 2 + 10;
+  g.save();
+  polyPath(g, pts); g.clip();
+  g.translate(cx, cy); g.rotate(polyAxis(pts));
+  if (p.c === 'g') {                                   // pruhy sečení
+    g.fillStyle = 'rgba(255,255,255,0.07)';
+    for (let x = -R; x < R; x += 44) g.fillRect(x, -R, 22, 2 * R);
+  }
+  g.strokeStyle = 'rgba(255,255,255,0.7)'; g.lineWidth = 1.6;
+  g.beginPath(); g.moveTo(0, -R); g.lineTo(0, R); g.stroke();   // středová čára
+  if (p.c === 'g' && polyArea(pts) > 60000) { g.beginPath(); g.arc(0, 0, 40, 0, TAU); g.stroke(); }
+  g.restore();
+  g.save();
+  polyPath(g, pts); g.clip();
+  g.strokeStyle = 'rgba(255,255,255,0.75)'; g.lineWidth = 4;
+  polyPath(g, pts); g.stroke();
+  g.restore();
+}
+function drawEnvGround(g) {
+  const E = window.REAL_ENV;
+  if (!E) {
+    for (const pts of (window.REAL_PARKING || [])) { g.fillStyle = '#54575a'; polyPath(g, pts); g.fill(); }
+    return;
+  }
+  seed = 2024;
+  const fillAll = (arr, style) => { g.fillStyle = style; for (const p of arr) { polyPath(g, p); g.fill(); } };
+  fillAll(E.dirt, texPattern(g, '#8f8a6c', ['rgba(170,150,110,0.35)', 'rgba(70,90,50,0.25)'], 150));
+  fillAll(E.grass, texPattern(g, '#538847', ['rgba(125,175,98,0.28)', 'rgba(40,82,36,0.20)'], 150));
+  fillAll(E.park, texPattern(g, '#528748', ['rgba(120,170,95,0.28)', 'rgba(36,76,34,0.25)'], 150));
+  fillAll(E.forest, texPattern(g, '#3b6a37', ['rgba(30,60,30,0.35)', 'rgba(80,125,70,0.22)'], 190));
+  fillAll(E.paved, texPattern(g, '#aaa598', ['rgba(255,255,255,0.10)', 'rgba(0,0,0,0.07)'], 120));
+  fillAll(E.play, texPattern(g, '#c2b185', ['rgba(255,255,255,0.14)', 'rgba(110,90,50,0.14)'], 120));
+  // voda: potoky a plochy se světlým břehem
+  strokeLines(g, E.streams, '#6fa3b8', l => l.w + 5);
+  strokeLines(g, E.streams, '#3f7896', l => l.w);
+  for (const p of E.water) {
+    g.fillStyle = '#3f7896'; polyPath(g, p); g.fill();
+    g.strokeStyle = '#6fa3b8'; g.lineWidth = 3; polyPath(g, p); g.stroke();
+  }
+  for (const pts of (window.REAL_PARKING || [])) drawParking(g, pts);
+  for (const p of E.pitch) drawPitch(g, p);
+  strokeLines(g, E.tracks, '#b4573f', l => l.w);
+  // pěší a cyklo (pod vozovkami — na přejezdech má navrch silnice)
+  const kind = t => E.paths.filter(p => p.t === t);
+  strokeLines(g, kind('t'), '#8f876b', 7);
+  strokeLines(g, kind('p'), '#b4ae9f', 13);
+  strokeLines(g, kind('f'), '#aaa598', 6);
+  strokeLines(g, kind('s'), '#aaa598', 7);
+  g.lineCap = 'butt';
+  strokeLines(g, kind('s'), 'rgba(0,0,0,0.25)', 7, [2, 3]);     // schody: příčné stupně
+  strokeLines(g, kind('c'), '#a4756a', 7);
+  // boční ulice: obrubník + asfalt, u širších naznačená osa
+  strokeLines(g, E.roads, '#8d897f', l => l.w + 5);
+  strokeLines(g, E.roads, '#45484b', l => l.w);
+  g.lineCap = 'butt';
+  strokeLines(g, E.roads.filter(l => l.w >= 28), 'rgba(255,255,255,0.28)', 1.6, [12, 14]);
+  // ploty a živé ploty
+  strokeLines(g, E.fences.filter(f => f.t === 'h'), '#2f5a2b', 6);
+  strokeLines(g, E.fences.filter(f => f.t !== 'h'), 'rgba(30,30,30,0.5)', 1.6);
+  g.lineCap = 'butt'; g.lineJoin = 'miter';
+}
+// zaústění bočních ulic do hlavních ramen (přes chodník a travnatý lem)
+function drawEnvStubs(g) {
+  const E = window.REAL_ENV;
+  if (!E) return;
+  for (const s of E.stubs) {
+    g.save();
+    g.rotate(s.k * Math.PI / 2);
+    const x0 = s.s > 0 ? (s.k === 0 ? 68 : 96) : -180, x1 = s.s > 0 ? 180 : -138;
+    g.fillStyle = '#8d897f';                                  // obrubník jako u bočních ulic
+    g.fillRect(x0, s.y - s.w / 2 - 2.5, x1 - x0, s.w + 5);
+    g.fillStyle = '#45484b';
+    g.fillRect(x0, s.y - s.w / 2, x1 - x0, s.w);
+    g.restore();
+  }
+}
+function drawEnvTop(g, builds) {
+  const E = window.REAL_ENV;
+  if (!E) return;
+  // stromy tam, kde opravdu rostou (koruny z ortofota + lesní plochy)
+  const T = E.trees;
+  seed = 4242;
+  for (let i = 0; i < T.length; i += 2)
+    drawTree(g, T[i] + (srand() - 0.5) * 7, T[i + 1] + (srand() - 0.5) * 7, 10.5 + srand() * 8.5, Math.floor(srand() * 4));
+  // popisky významných míst — vodorovně vůči obrazovce (scéna je natočená o ROT)
+  g.font = 'bold 25px "Segoe UI", Arial, sans-serif';
+  g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
+  for (const l of E.labels) {
+    g.save();
+    g.translate(l.x, l.y); g.rotate(-ROT);
+    g.strokeStyle = 'rgba(0,0,0,0.5)'; g.lineWidth = 5;
+    g.strokeText(l.t, 0, 0);
+    g.fillStyle = 'rgba(255,255,255,0.86)';
+    g.fillText(l.t, 0, 0);
+    g.restore();
+  }
+  g.textBaseline = 'alphabetic';
+}
+
+function buildingColors(b, i) {
+  let r, gg, bl;
+  if (b.c) {
+    r = parseInt(b.c.slice(1, 3), 16); gg = parseInt(b.c.slice(3, 5), 16); bl = parseInt(b.c.slice(5, 7), 16);
+    const lum = (r + gg + bl) / 3, k = lum > 200 ? 200 / lum : lum < 78 ? 78 / lum : 1;   // ani oslnivě bílá, ani černá díra
+    r *= k; gg *= k; bl *= k;
+  } else {
+    const t = b.t;
+    const hex = b.r === 'p' ? ['#a8553d', '#9c4a38', '#b0603f', '#8a5a48'][i % 4]
+      : b.l >= 7 ? '#c4c1b8'
+      : (t === 'school' || t === 'civic' || t === 'university' || t === 'dormitory' || t === 'hospital') ? '#cbbf9f'
+      : (t === 'industrial' || t === 'warehouse' || t === 'commercial' || t === 'retail') ? '#b0b6bc'
+      : t === 'roof' ? '#d6d6d2' : '#a29d94';
+    r = parseInt(hex.slice(1, 3), 16); gg = parseInt(hex.slice(3, 5), 16); bl = parseInt(hex.slice(5, 7), 16);
+  }
+  const f = k => 'rgb(' + Math.round(r * k) + ',' + Math.round(gg * k) + ',' + Math.round(bl * k) + ')';
+  return { roof: f(1), wall: f(0.62) };
+}
+function drawRealBuilding(g, b, i) {
+  const pts = b.p, col = buildingColors(b, i);
+  const [x0, y0, x1, y1] = polyBox(pts);
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, R = Math.hypot(x1 - x0, y1 - y0) / 2 + 4;
+  const canopy = b.t === 'roof', site = b.t === 'construction';
+  // vržený stín podle výšky: sjednocení posunutých obrysů (bez vrstvení průhlednosti)
+  const sh = canopy ? 5 : site ? 9 : Math.min(30, 5 + b.l * 2.1);
+  g.fillStyle = 'rgba(0,0,0,0.30)';
+  g.beginPath();
+  for (let st = 1; st <= 4; st++) {
+    const o = sh * st / 4;
+    g.moveTo(pts[0][0] + o, pts[0][1] + o * 1.15);
+    for (let j = 1; j < pts.length; j++) g.lineTo(pts[j][0] + o, pts[j][1] + o * 1.15);
+    g.closePath();
+  }
+  g.fill('nonzero');
+  g.save();
+  polyPath(g, pts); g.clip();
+  g.fillStyle = site ? '#b3afa4' : col.roof;
+  g.fillRect(x0, y0, x1 - x0, y1 - y0);
+  if (site) {
+    // rozestavěná budova: hrubá betonová deska s rastrem sloupů a výztuže
+    g.translate(cx, cy); g.rotate(polyAxis(pts));
+    g.strokeStyle = 'rgba(70,60,50,0.22)'; g.lineWidth = 1;
+    g.beginPath();
+    for (let v = -R; v < R; v += 13) { g.moveTo(v, -R); g.lineTo(v, R); g.moveTo(-R, v); g.lineTo(R, v); }
+    g.stroke();
+    g.fillStyle = 'rgba(60,55,50,0.45)';
+    for (let u = -R; u < R; u += 39) for (let v = -R; v < R; v += 39) g.fillRect(u - 2, v - 2, 4, 4);
+  } else if (b.r === 'p') {
+    // sedlová střecha: hřeben v ose domu, odvrácená polovina ve stínu
+    const ang = polyAxis(pts);
+    g.translate(cx, cy); g.rotate(ang);
+    const dark = (-Math.sin(ang) + 1.15 * Math.cos(ang)) > 0 ? 1 : -1;
+    g.fillStyle = 'rgba(0,0,0,0.22)';
+    g.fillRect(-R, dark > 0 ? 0 : -R, 2 * R, R);
+    g.fillStyle = 'rgba(255,255,255,0.10)';
+    g.fillRect(-R, dark > 0 ? -R : 0, 2 * R, R);
+    g.strokeStyle = 'rgba(0,0,0,0.07)'; g.lineWidth = 1;
+    g.beginPath();
+    for (let y = -R; y < R; y += 5) { g.moveTo(-R, y); g.lineTo(R, y); }
+    g.stroke();
+    g.strokeStyle = 'rgba(255,255,255,0.4)'; g.lineWidth = 1.6;
+    g.beginPath(); g.moveTo(-R, 0); g.lineTo(R, 0); g.stroke();
+  } else if (!canopy) {
+    // plochá střecha: atika po obvodu + vzduchotechnika / nástavby
+    g.strokeStyle = 'rgba(0,0,0,0.22)'; g.lineWidth = 9;
+    polyPath(g, pts); g.stroke();
+    g.strokeStyle = 'rgba(255,255,255,0.30)'; g.lineWidth = 3;
+    polyPath(g, pts); g.stroke();
+    seed = 9000 + i * 131;
+    const n = Math.min(7, Math.floor(polyArea(pts) / 11000));
+    for (let u = 0, tries = 0; u < n && tries < 60; tries++) {
+      const w = 9 + srand() * 12, h = 7 + srand() * 8;
+      const ux = x0 + srand() * (x1 - x0), uy = y0 + srand() * (y1 - y0);
+      const m = 9;
+      if (!pointInPoly(ux - m, uy - m, pts) || !pointInPoly(ux + w + m, uy - m, pts) ||
+          !pointInPoly(ux - m, uy + h + m, pts) || !pointInPoly(ux + w + m, uy + h + m, pts)) continue;
+      g.fillStyle = 'rgba(0,0,0,0.28)'; g.fillRect(ux + 2.5, uy + 3, w, h);
+      g.fillStyle = u % 3 === 0 ? '#d3d6d8' : '#8b9196'; g.fillRect(ux, uy, w, h);
+      g.strokeStyle = 'rgba(0,0,0,0.3)'; g.lineWidth = 1; g.strokeRect(ux, uy, w, h);
+      u++;
+    }
+  }
+  g.restore();
+  g.strokeStyle = canopy ? 'rgba(0,0,0,0.3)' : site ? '#6f6a60' : col.wall; g.lineWidth = canopy ? 1.5 : 2.6; g.lineJoin = 'miter';
+  polyPath(g, pts); g.stroke();
+  if (site && polyArea(pts) > 20000) {
+    // věžový jeřáb u rohu stavby: stín, výložník s protizávažím, věž
+    seed = 700 + i * 17;
+    const a = srand() * TAU, L = 120 + srand() * 50;
+    const jx = pts[0][0] + (cx - pts[0][0]) * 0.12, jy = pts[0][1] + (cy - pts[0][1]) * 0.12;
+    const jib = (ox, oy, style, w) => {
+      g.strokeStyle = style; g.lineWidth = w; g.lineCap = 'butt';
+      g.beginPath();
+      g.moveTo(jx + ox - Math.cos(a) * L * 0.28, jy + oy - Math.sin(a) * L * 0.28);
+      g.lineTo(jx + ox + Math.cos(a) * L, jy + oy + Math.sin(a) * L);
+      g.stroke();
+    };
+    jib(26, 30, 'rgba(0,0,0,0.25)', 5);
+    jib(0, 0, '#e2b33c', 4.5);
+    g.fillStyle = '#6b6f73';
+    g.fillRect(jx - Math.cos(a) * L * 0.28 - 5, jy - Math.sin(a) * L * 0.28 - 5, 10, 10);
+    g.fillStyle = '#c9972a'; g.fillRect(jx - 6, jy - 6, 12, 12);
+    g.strokeStyle = 'rgba(0,0,0,0.5)'; g.lineWidth = 1; g.strokeRect(jx - 6, jy - 6, 12, 12);
   }
 }
 
@@ -1879,11 +2101,13 @@ function drawArrow(g, x, y, dir) {
   }
   g.restore();
 }
-function drawTree(g, x, y, r) {
+function drawTree(g, x, y, r, tone) {
+  const TREE_TONES = [['#6fa055', '#2f5c2a'], ['#7aa85a', '#35642c'], ['#5f9450', '#27502a'], ['#86b160', '#3d6c30']];
   g.fillStyle = 'rgba(0,0,0,0.25)';
   g.beginPath(); g.arc(x + r * 0.3, y + r * 0.35, r, 0, TAU); g.fill();
   const grad = g.createRadialGradient(x - r * 0.3, y - r * 0.3, r * 0.15, x, y, r);
-  grad.addColorStop(0, '#6fa055'); grad.addColorStop(1, '#2f5c2a');
+  const tc = TREE_TONES[tone || 0];
+  grad.addColorStop(0, tc[0]); grad.addColorStop(1, tc[1]);
   g.fillStyle = grad;
   g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
 }

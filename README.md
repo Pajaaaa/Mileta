@@ -39,7 +39,8 @@ Dále: klik/tap na semafor přepíná, **P** pauza, **M** hudba, kolečko/pinch 
 ## Věrnost předloze
 
 - Geometrie po rekonstrukci 2023–25: na každém rameni levý řadicí pruh + 2 přímé + pravý bypass kolem ostrůvku, podchody místo přechodů, zúžené výjezdy (Hradecká na 1 pruh), Zborovská se dvěma levými řadicími pruhy.
-- Okolní zástavba je **reálná z OpenStreetMap** (`buildings.js` — generováno skriptem z OSM exportu, střed 50.201147 N 15.832446 E, budovy stylované podle typu a podlažnosti, areál FN).
+- Okolí je **reálné**: budovy, parkoviště, boční ulice, chodníky a cyklostezky, trávníky, lesík, hřiště, ploty i rozestavěné stavby z OpenStreetMap; barvy střech a rozmístění stromů podle Ortofota ČR (ČÚZK). Generuje `tools/gen-okoli.py` do `buildings.js` (střed 50.201147 N 15.832446 E).
+- Skutečná křižovatka není pravoúhlá (Hradecká −11°, Zborovská −10°, Sokolská +4° až +8° proti herním osám). Generátor proto každý kvadrant převádí šikmými souřadnicemi mezi sousedními rameny, takže ulice padnou na herní osy a vše zůstane na správné straně; budovy se jen posunou a natočí, aby zůstaly pravoúhlé.
 - Scéna otočená o 38° jako na leteckém snímku.
 
 ## Zvuk
@@ -59,7 +60,8 @@ index.html          UI, HUD, overlaye (intro, game-over, žebříček), CSS vč.
 game.js             kompletní engine (~2700 řádek): geometrie drah, fyzika a AI vozidel,
                     kolize (SAT, vícečlánková dlouhá vozidla), signální logika, mise,
                     backlog poptávky, zvuk, replay, statistiky, žebříček — vanilla JS, žádné závislosti
-buildings.js        reálné budovy a parkoviště z OSM (window.REAL_BUILDINGS / REAL_PARKING)
+buildings.js        reálné okolí (window.REAL_BUILDINGS / REAL_PARKING / REAL_ENV) — generovaný soubor
+tools/gen-okoli.py  generátor okolí z OSM výřezu a ortofota (postup v hlavičce skriptu)
 music.mp3           hudba (Kevin MacLeod, CC BY)
 snd/                klaksony (mixkit, CC0): horn1–3 + horn_truck
 og.png              náhled pro sociální sítě
@@ -91,4 +93,4 @@ Statické soubory → `/var/www/mileta/` (nginx, vhost izovan.cz, no-cache na HT
 
 ## Licence a kredity
 
-Kód © Pavel Vlček 2026. Hudba Kevin MacLeod „Floating Cities" ([CC BY](https://creativecommons.org/licenses/by/4.0/), incompetech.com). Zvukové efekty [Mixkit](https://mixkit.co/) (volná licence). Data budov © přispěvatelé [OpenStreetMap](https://www.openstreetmap.org/copyright) (ODbL).
+Kód © Pavel Vlček 2026. Hudba Kevin MacLeod „Floating Cities" ([CC BY](https://creativecommons.org/licenses/by/4.0/), incompetech.com). Zvukové efekty [Mixkit](https://mixkit.co/) (volná licence). Mapová data okolí © přispěvatelé [OpenStreetMap](https://www.openstreetmap.org/copyright) (ODbL); barvy střech a stromy odvozeny z Ortofota ČR © [ČÚZK](https://www.cuzk.gov.cz/) (CC BY 4.0).
