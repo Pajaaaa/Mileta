@@ -15,11 +15,11 @@ Po přegenerování zvednout ?v= u skriptů v index.html.
 
 Převod souřadnic: skutečná křižovatka není pravoúhlý kříž (Hradecká −11°,
 Sokolská +4°/+8°, Zborovská −10° proti herním osám) a ramena se dál stáčejí.
-Každý kvadrant mezi dvěma rameny se proto převádí šikmými souřadnicemi
-(p = α·a + β·b, a/b = směry sousedních ramen ve vzdálenosti bodu od středu),
-takže skutečná ramena padnou přesně na herní osy a vše kolem nich zůstane
-na správné straně ulice. Budovy se nepřevádějí bod po bodu (zkosily by se),
-ale posunou se těžištěm a natočí o stočení bližšího rovnoběžného ramene.
+Plochy a čáry se proto převádějí úhlově: vzdálenost od středu zůstává a úhel
+mezi dvěma sousedními rameny se rovnoměrně přepočte na 90°, takže skutečná
+ramena padnou přesně na herní osy a vše zůstane na správné straně ulice.
+Budovy, parkoviště a hřiště se nepřevádějí bod po bodu (zkosily by se): umístí
+se těžištěm jako tuhé těleso, natočí podle okolí a dorovnají přesně do os.
 Koridor silnice (skutečných 14 m od osy) se roztahuje na herních 170 px.
 """
 import sys, math, json, random
@@ -67,10 +67,10 @@ def arm_bearing(k, r):
 
 
 def quadrant(x, y):
-    """→ (k, α, β, t): kvadrant mezi rameny k a k+1, šikmé souřadnice, poloha 0..1."""
+    """→ (k, t): kvadrant mezi rameny k a k+1 a poloha v něm 0..1 (podle úhlu)."""
     r = math.hypot(x, y)
     if r < 1e-6:
-        return 0, 0.0, 0.0, 0.0
+        return 0, 0.0
     phi = math.degrees(math.atan2(x, -y))
     th = [arm_bearing(k, r) for k in range(4)]
     for k in range(4):
@@ -78,19 +78,100 @@ def quadrant(x, y):
         d = (phi - th[k]) % 360
         if d <= span:
             break
-    a, b = math.radians(th[k]), math.radians(th[(k + 1) % 4])
-    ax, ay, bx, by = math.sin(a), -math.cos(a), math.sin(b), -math.cos(b)
-    det = ax * by - ay * bx
-    al = (x * by - y * bx) / det
-    be = (ax * y - ay * x) / det
-    return k, al, be, d / span
+    return k, d / span
 
 
 def warp(x, y):
-    """Skutečné metry → „herní“ metry (ramena na osách)."""
-    k, al, be, _ = quadrant(x, y)
-    g0, g1 = GAX[k], GAX[(k + 1) % 4]
-    return al * g0[0] + be * g1[0], al * g0[1] + be * g1[1]
+    """Skutečné metry → „herní“ metry: vzdálenost od středu zůstává, úhel mezi
+    sousedními rameny se rovnoměrně roztáhne/stlačí na 90° (ramena padnou na osy)."""
+    k, t = quadrant(x, y)
+    r = math.hypot(x, y)
+    a = math.radians(90 * k + 90 * t)
+    return r * math.sin(a), -r * math.cos(a)
+
+
+def local_rotation(x, y):
+    """Stočení okolí v daném místě [°] — plynule mezi stočením obou ramen kvadrantu."""
+    k, t = quadrant(x, y)
+    r = math.hypot(x, y)
+    k1 = (k + 1) % 4
+    d0 = (90 * k - arm_bearing(k, r) + 180) % 360 - 180
+    d1 = (90 * k1 - arm_bearing(k1, r) + 180) % 360 - 180
+    return d0 + (d1 - d0) * t
+
+
+def place_group(rings, min_px=180, limit=95, snap=25.0):
+    """Umístí skupinu půdorysů jako jedno tuhé těleso: společné těžiště převodem,
+    natočení podle okolí a dorovnání převládajícího směru hran přesně do herních os.
+    Vzájemná poloha půdorysů ve skupině se nemění. Vrací seznam px obrysů nebo None."""
+    A = sx_ = sy_ = 0.0
+    for ring in rings:
+        a, x, y = area_centroid(ring)
+        A += a; sx_ += a * x; sy_ += a * y
+    cx, cy = sx_ / A, sy_ / A
+    d = math.radians(local_rotation(cx, cy))
+    c, s_ = math.cos(d), math.sin(d)
+    locs = [[((x - cx) * c - (y - cy) * s_, (x - cx) * s_ + (y - cy) * c) for x, y in ring] for ring in rings]
+    sx4 = cx4 = 0.0
+    for loc in locs:
+        for (x0, y0), (x1, y1) in zip(loc, loc[1:] + loc[:1]):
+            L = math.hypot(x1 - x0, y1 - y0)
+            a = math.atan2(y1 - y0, x1 - x0)
+            sx4 += L * math.sin(4 * a); cx4 += L * math.cos(4 * a)
+    dev = math.atan2(sx4, cx4) / 4
+    if abs(math.degrees(dev)) <= snap:
+        c, s_ = math.cos(-dev), math.sin(-dev)
+        locs = [[(x * c - y * s_, x * s_ + y * c) for x, y in loc] for loc in locs]
+    gx, gy = warp(cx, cy)
+    X, Y = inflate(gx), inflate(gy)
+    out = [[(X + x * PXM, Y + y * PXM) for x, y in loc] for loc in locs]
+    sx = 1 if gx >= 0 else -1; sy = 1 if gy >= 0 else -1
+    dx = max(0.0, min_px - min(p[0] * sx for pts in out for p in pts))
+    dy = max(0.0, min_px - min(p[1] * sy for pts in out for p in pts))
+    if dx > limit or dy > limit:
+        return None
+    return [[(x + dx * sx, y + dy * sy) for x, y in pts] for pts in out]
+
+
+def place_rigid(ring, min_px=180, limit=95, snap=25.0):
+    r = place_group([ring], min_px, limit, snap)
+    if not r or not any(abs(x) <= EXT and abs(y) <= EXT for x, y in r[0]):
+        return None
+    return r[0]
+
+
+def ring_gap(a, b):
+    """Nejmenší vzdálenost dvou obrysů [m] (0, když se překrývají)."""
+    if pip(a[0][0], a[0][1], b) or pip(b[0][0], b[0][1], a):
+        return 0.0
+    best = 1e18
+    for p, q in ((a, b), (b, a)):
+        for i in range(len(q)):
+            for pt in p:
+                best = min(best, seg_dist2(pt[0], pt[1], q[i], q[(i + 1) % len(q)]))
+    return math.sqrt(best)
+
+
+def cluster(buildings, gap=9.0):
+    """Sousedící budovy (blíž než gap metrů) do skupin — umísťují se společně."""
+    n = len(buildings)
+    par = list(range(n))
+
+    def find(i):
+        while par[i] != i:
+            par[i] = par[par[i]]; i = par[i]
+        return i
+    bb = [bbox(b['q']) for b in buildings]
+    for i in range(n):
+        for j in range(i + 1, n):
+            if bb[i][0] - gap > bb[j][2] or bb[j][0] - gap > bb[i][2] or bb[i][1] - gap > bb[j][3] or bb[j][1] - gap > bb[i][3]:
+                continue
+            if find(i) != find(j) and ring_gap(buildings[i]['q'], buildings[j]['q']) < gap:
+                par[find(i)] = find(j)
+    groups = {}
+    for i in range(n):
+        groups.setdefault(find(i), []).append(buildings[i])
+    return list(groups.values())
 
 
 def inflate(u):
@@ -377,7 +458,11 @@ def main():
                 buildings.append(b)
                 real['bld'].append((bbox(ring), ring))
             continue
-        m = map_poly(ring)
+        if kind in ('parking', 'pitch', 'play'):
+            m = place_rigid(ring, 174)
+            m = ri(m) if m else None
+        else:
+            m = map_poly(ring)
         if not m:
             continue
         if kind == 'parking':
@@ -415,7 +500,12 @@ def main():
             if hw.startswith('primary') or frac > 0.6 or (hw.endswith('_link') and rmax < 130):
                 continue    # hlavní ramena a jejich bypassy kreslí hra sama
             w = ROADW.get(hw, 22)
-            if t.get('service') in ('parking_aisle', 'driveway'):
+            if hw == 'service':
+                inpark = sum(1 for p in d if any(x0 <= p[0] <= x1 and y0 <= p[1] <= y1 and pip(p[0], p[1], rg)
+                                                 for (x0, y0, x1, y1), rg in real['park'])) / len(d)
+                if inpark > 0.5 or t.get('service') == 'parking_aisle':
+                    continue
+            if t.get('service') == 'driveway':
                 w = 14
             hw_m = w / PXM / 2 + 0.5
             for seg in zip(pts, pts[1:]):
@@ -483,10 +573,14 @@ def main():
 
     # --- budovy: vytlačit z koridoru, zahodit ty, které stojí v herní silnici
     kept = []
-    for b in buildings:
-        r = place_building(b)
-        if r:
-            kept.append(r)
+    for grp in cluster(buildings):
+        placed = place_group([b['q'] for b in grp])
+        if placed is None and len(grp) > 1:        # skupina se nevejde → zkusit po jedné
+            placed = [(place_group([b['q']]) or [None])[0] for b in grp]
+        for b, pts in zip(grp, placed or [None] * len(grp)):
+            r = place_building(b, pts)
+            if r:
+                kept.append(r)
     buildings = kept
 
     # --- stromy z ortofota (tmavě zelené/zrnité koruny) + stromořadí z OSM
@@ -557,7 +651,7 @@ def main():
                 if seg_dist2(x, y, a, b) < hw_m * hw_m:
                     return True
         return False
-    bpx = [(bbox(b['p']), b['p']) for b in buildings]
+    bpx = [(bbox(q), q) for q in [b['p'] for b in buildings] + parking + [pp['p'] for pp in env['pitch']] + env['play']]
     tout, taken = [], {}
     dbg_pts = []
     for x, y in trees:
@@ -658,8 +752,9 @@ def make_building(t, ring, orto):
     except ValueError:
         lv = LEVELS.get(typ, 2)
     shape = t.get('roof:shape', '')
-    pitched = shape in ('gabled', 'hipped', 'half-hipped', 'pitched', 'gambrel', 'mansard', 'pyramidal') or \
-        (shape == '' and typ in ('house', 'detached', 'semidetached_house', 'terrace', 'residential', 'yes') and area < 260 and lv <= 3)
+    pitched = area < 420 and lv <= 3 and (
+        shape in ('gabled', 'hipped', 'half-hipped', 'pitched', 'gambrel', 'mansard', 'pyramidal') or
+        (shape == '' and typ in ('house', 'detached', 'semidetached_house', 'terrace', 'residential', 'yes') and area < 260))
     b = {'q': ring, 'm': (cx, cy), 'l': max(1, min(lv, 14)), 't': typ, 'r': 'p' if pitched else 'f'}
     if orto and typ != 'construction':
         ipx, orto_xy, IW, IH = orto
@@ -690,40 +785,11 @@ def make_building(t, ring, orto):
     return b
 
 
-def place_building(b):
-    ring, (cx, cy) = b['q'], b['m']
-    k, al, be, tq = quadrant(cx, cy)
-    r = math.hypot(cx, cy)
-    k1 = (k + 1) % 4
-    d0 = 90 * k - arm_bearing(k, r)
-    d1 = 90 * k1 - arm_bearing(k1, r)
-    d0 = (d0 + 180) % 360 - 180; d1 = (d1 + 180) % 360 - 180
-    # orientace nejdelší hrany vůči ramenům (mod 90°)
-    best = max(zip(ring, ring[1:] + ring[:1]), key=lambda e: (e[1][0] - e[0][0]) ** 2 + (e[1][1] - e[0][1]) ** 2)
-    eb = math.degrees(math.atan2(best[1][0] - best[0][0], -(best[1][1] - best[0][1])))
-
-    def mis(arm):
-        d = (eb - arm_bearing(arm, r)) % 90
-        return min(d, 90 - d)
-    m0, m1 = mis(k), mis(k1)
-    if min(m0, m1) < 9:
-        delta = d0 if m0 <= m1 else d1          # stojí rovnoběžně s ulicí → natočit s ní
-    else:
-        delta = d0 + (d1 - d0) * tq             # jinak plynule podle polohy v kvadrantu
-    c, s = math.cos(math.radians(delta)), math.sin(math.radians(delta))
-    X, Y = px(cx, cy)
-    pts = [(X + ((x - cx) * c - (y - cy) * s) * PXM, Y + ((x - cx) * s + (y - cy) * c) * PXM) for x, y in ring]
-    # strana ulic podle kvadrantu
-    g0, g1 = GAX[k], GAX[k1]
-    sx = g0[0] + g1[0]; sy = g0[1] + g1[1]
-    MIN = 180
-    dx = max(0.0, MIN - min(p[0] * sx for p in pts))
-    dy = max(0.0, MIN - min(p[1] * sy for p in pts))
-    if dx > 95 or dy > 95:
-        print('  vynechána budova v silnici: %s (%d,%d) posun %d/%d' % (b['t'], X, Y, dx, dy), file=sys.stderr)
-        return None
-    pts = [(x + dx * sx, y + dy * sy) for x, y in pts]
-    if not any(abs(x) <= EXT and abs(y) <= EXT for x, y in pts):
+def place_building(b, pts):
+    if not pts or not any(abs(x) <= EXT and abs(y) <= EXT for x, y in pts):
+        X, Y = px(*b['m'])
+        if abs(X) <= EXT and abs(Y) <= EXT:
+            print('  vynechána budova v silnici: %s (%d,%d)' % (b['t'], X, Y), file=sys.stderr)
         return None
     out = {'p': pts, 'l': b['l'], 't': b['t'], 'r': b['r']}
     if 'c' in b and not b.get('bare'):

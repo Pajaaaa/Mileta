@@ -40,7 +40,7 @@ Dále: klik/tap na semafor přepíná, **P** pauza, **M** hudba, kolečko/pinch 
 
 - Geometrie po rekonstrukci 2023–25: na každém rameni levý řadicí pruh + 2 přímé + pravý bypass kolem ostrůvku, podchody místo přechodů, zúžené výjezdy (Hradecká na 1 pruh), Zborovská se dvěma levými řadicími pruhy.
 - Okolí je **reálné**: budovy, parkoviště, boční ulice, chodníky a cyklostezky, trávníky, lesík, hřiště, ploty i rozestavěné stavby z OpenStreetMap; barvy střech a rozmístění stromů podle Ortofota ČR (ČÚZK). Generuje `tools/gen-okoli.py` do `buildings.js` (střed 50.201147 N 15.832446 E).
-- Skutečná křižovatka není pravoúhlá (Hradecká −11°, Zborovská −10°, Sokolská +4° až +8° proti herním osám). Generátor proto každý kvadrant převádí šikmými souřadnicemi mezi sousedními rameny, takže ulice padnou na herní osy a vše zůstane na správné straně; budovy se jen posunou a natočí, aby zůstaly pravoúhlé.
+- Skutečná křižovatka není pravoúhlá (Hradecká −11°, Zborovská −10°, Sokolská +4° až +8° proti herním osám). Generátor proto plochy a cesty převádí úhlově (vzdálenost od středu zůstává, úhel mezi sousedními rameny se přepočte na 90°), takže ulice padnou na herní osy a vše zůstane na správné straně. Budovy, parkoviště a hřiště se nepřevádějí bod po bodu, ale jako tuhá tělesa: sousedící budovy tvoří skupinu, která se posune, natočí a dorovná do os, takže půdorysy zůstávají přesně podle katastru.
 - Scéna otočená o 38° jako na leteckém snímku.
 
 ## Zvuk
