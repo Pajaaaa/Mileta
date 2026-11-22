@@ -470,6 +470,33 @@ function nearestS(path, pt) {
 // jsou u kraje křižovatky a pokrývá je základní filtr okolo středu
 const MERGE_PTS = [0, 1, 2, 3].map(k => armXform(k, -265, PATHS[k][3].outY));
 
+// ==================== odbočka do ul. Akademika Heyrovského ====================
+// Boční ulice ústí zprava do výjezdu Hradecké ~590 px severně od středu. Část
+// osobních vozidel jedoucích po Hradecké na sever do ní odbočí: v řezu AH_Y0
+// přejdou z průběžné dráhy na společnou větev AH (vede ulicí až za okraj mapy).
+const AH_Y0 = -380;                 // řez výjezdu: odtud větev + sledování napříč drahami
+const AH_P = 0.22;                  // podíl odbočujících
+const AH_TYPES = { car: 1, van: 1, moto: 1, carTrailer: 1 };
+const AH_MOUTH = { y: -589, w: 28, r: 26 };   // osa, šířka a poloměr nároží ústí
+const AH = (function () {
+  const ly = AH_MOUTH.y + 7;        // pravý jízdní pruh boční ulice
+  const yc = ly + 36;               // začátek oblouku (jede se směrem −y)
+  const raw = samplePts([{ x: 52, y: AH_Y0 }, { x: 52, y: yc }])
+    .concat(bezier({ x: 52, y: yc }, { x: 52, y: ly + 12 }, { x: 66, y: ly }, { x: 96, y: ly }, 16))
+    .concat(samplePts([{ x: 96, y: ly }, { x: 170, y: -582 }, { x: 238, y: -571 }, { x: 308, y: -564 },
+      { x: 384, y: -558 }, { x: 463, y: -555 }, { x: 666, y: -554 }, { x: 754, y: -555 },
+      { x: 879, y: -559 }, { x: 930, y: -558 }, { x: 1015, y: -554 }, { x: 1058, y: -551 },
+      { x: 1184, y: -540 }, { x: 1332, y: -523 }, { x: 1441, y: -508 }, { x: 1531, y: -494 },
+      { x: 1660, y: -488 }]));
+  const p = buildPath(0, raw, { move: 'R', ah: true, ex0: 0 });
+  p.sClear = 0;
+  p.sCurve = AH_Y0 - yc;            // začátek oblouku (s na větvi)
+  p.sLeave = p.sCurve + 62;         // odtud je vozidlo bokem mimo pruh Hradecké
+  p.curveCap = { from: p.sCurve - 6, to: p.sCurve + 95, v: 52 };
+  return p;
+})();
+for (const q of [PATHS[2][2], PATHS[3][0], PATHS[1][3]]) q.ex0 = nearestS(q, { x: 52, y: AH_Y0 });
+
 // ==================== semafory ====================
 // stavy: 'red' | 'redamber' | 'green' | 'amber'
 // skupiny na každém rameni: T = rovně, L = vlevo, R = bypass vpravo
@@ -654,6 +681,7 @@ function buildVehicleSpec(arm) {
     trailerLoad: type === 'carTrailer' ? pick(['empty', 'tarp', 'luggage']) : null,
     counted: false, crashed: false, wait: 0, honkT: rnd(8, 20),
     pose: pathPose(path, 10),
+    ahTurn: path.ex0 != null && !!AH_TYPES[type] && Math.random() < AH_P,
   };
 }
 
@@ -669,6 +697,11 @@ function placeVehicle(spec) {
 
 function updateVehicle(v, dt) {
   if (v.crashed) { v.v = 0; return; }
+  // odbočení do Akademika Heyrovského: v řezu AH_Y0 přechod na společnou větev
+  if (v.ahTurn && v.path !== AH && v.s >= v.path.ex0) {
+    if (v.emg || v.mhd || v.emgM || !AH_TYPES[v.type]) v.ahTurn = false;
+    else { v.s -= v.path.ex0; v.path = AH; }
+  }
   const p = v.path, def = v.def;
   let vt = def.vmax;
   v._why = ''; v._whyV = null;      // ladicí: které omezení srazilo rychlost (a kdo)
@@ -679,6 +712,11 @@ function updateVehicle(v, dt) {
 
   const brake = def.brk * 0.85 * G.grip;   // za deště delší brzdná dráha
   const nose = v.s + def.len / 2;
+  if (p === AH) {
+    // před obloukem plynule zpomalit, v obytné ulici pak „třicítka"
+    if (v.s < p.sCurve) lim(Math.sqrt(52 * 52 + brake * (p.sCurve - v.s)), 'curve');
+    else if (v.s > p.curveCap.to) lim(88, 'zone30');
+  }
   if (v.commitT == null && p.sStop && nose > p.sStop + 3) v.commitT = G.time;
 
   // stopčára podle semaforu příslušné skupiny
@@ -696,7 +734,7 @@ function updateVehicle(v, dt) {
     // křižovatky.
     if (!mustStop && (st === 'green' || st === 'amber') && !p.bypass && nose > p.sStop - 220) {
       for (const o of G.vehicles) {
-        if (o === v || o.crashed || o.path.bypass) continue;
+        if (o === v || o.crashed || o.path.bypass || o.path.ah) continue;
         const perp = ((o.arm - v.arm) & 1) === 1;
         // protilehlé rameno je konflikt, když právě jeden z dvojice odbočuje
         // vlevo (levé kříží protisměr — oběma směry!)
@@ -724,17 +762,28 @@ function updateVehicle(v, dt) {
 
   // jízda za vozidlem ve stejném pruhu (varianty levého sdílejí nájezd,
   // rozvětvené kusy za laneForkS už ne)
-  let leader = null;
+  // Na výjezdu Hradecké (za řezem AH_Y0) se navíc sledují i vozidla z jiných
+  // drah téhož pruhu — jinak by do odbočujícího a brzdícího auta najela zezadu.
+  const uv = p.ex0 != null ? v.s - p.ex0 : -1;
+  let leader = null, leadS = 0;
   for (const o of G.vehicles) {
-    if (o === v || o.s <= v.s) continue;
-    if (o.path !== v.path) {
-      if (!(v.path.laneGroup && o.path.laneGroup === v.path.laneGroup &&
-            o.s < o.path.laneForkS + 60)) continue;
+    if (o === v) continue;
+    let os = o.s;
+    if (o.path !== p) {
+      if (p.laneGroup && o.path.laneGroup === p.laneGroup && o.s < o.path.laneForkS + 60) {
+        // společný nájezd
+      } else if (o.path.ex0 != null && p.ex0 != null &&
+                 (uv > 0 || (o.path === AH && o.arm === v.arm))) {
+        if (o.path === AH && o.s - o.def.len / 2 > AH.sLeave) continue;   // už je v boční ulici
+        if (p === AH && v.s > AH.sCurve) continue;                        // sám už odbočuje
+        os = v.s + (o.s - o.path.ex0) - uv;
+      } else continue;
     }
-    if (!leader || o.s < leader.s) leader = o;
+    if (os <= v.s) continue;
+    if (!leader || os < leadS) { leader = o; leadS = os; }
   }
   if (leader) {
-    const gap = (leader.s - leader.def.len / 2) - nose - 10;
+    const gap = (leadS - leader.def.len / 2) - nose - 10;
     const lv = leader.crashed ? 0 : leader.v;
     const safe = Math.sqrt(Math.max(0, lv * lv + 2 * brake * Math.max(0, gap)));
     lim(gap < 1 ? 0 : safe, 'lead', leader.id);
@@ -1804,8 +1853,9 @@ bg.width = bg.height = BG_HALF * 2;
       g.beginPath(); g.moveTo(1600, -94); g.lineTo(236, -94);
       g.quadraticCurveTo(66, -94, 66, -262);
       g.lineTo(66, -1600); g.stroke();
-      for (const ay of [-620, -1000]) {
-        g.save(); g.translate(52, ay); g.rotate(Math.PI); drawArrow(g, 0, 0, 'up'); g.restore();
+      for (const ay of [-470, -700, -1000]) {
+        g.save(); g.translate(52, ay); g.rotate(Math.PI);
+        drawArrow(g, 0, 0, ay === -470 ? 'upright' : 'up'); g.restore();
       }
     }
     g.restore();
@@ -1996,6 +2046,7 @@ function drawEnvStubs(g) {
   const E = window.REAL_ENV;
   if (!E) return;
   for (const s of E.stubs) {
+    if (s.k === 0 && s.s > 0 && Math.abs(s.y - AH_MOUTH.y) < 12) { drawAHMouth(g); continue; }
     g.save();
     g.rotate(s.k * Math.PI / 2);
     const x0 = s.s > 0 ? (s.k === 0 ? 68 : 96) : -180, x1 = s.s > 0 ? 180 : inboundEdge(s.k, s.y);
@@ -2005,6 +2056,41 @@ function drawEnvStubs(g) {
     g.fillRect(x0, s.y - s.w / 2, x1 - x0, s.w);
     g.restore();
   }
+}
+// ústí ul. Akademika Heyrovského do Hradecké: zaoblená nároží, přerušená
+// krajnice (vodicí čára přes ústí) a „dej přednost" pro vyjíždějící
+function drawAHMouth(g) {
+  const { y, w, r } = AH_MOUTH, h = w / 2, X = 66, X1 = 176;
+  const edge = (sg) => {            // jedno nároží + hrana ulice (sg = -1 sever, +1 jih)
+    g.moveTo(X, y + sg * (h + r));
+    g.quadraticCurveTo(X, y + sg * h, X + r, y + sg * h);
+    g.lineTo(X1, y + sg * h);
+  };
+  g.save();
+  g.lineJoin = 'round'; g.lineCap = 'butt';
+  // vozovka ústí
+  g.fillStyle = '#45484b';
+  g.beginPath(); edge(-1); g.lineTo(X1, y + h); g.lineTo(X + r, y + h);
+  g.quadraticCurveTo(X, y + h, X, y + h + r); g.closePath(); g.fill();
+  // obrubníky jen podél nároží a hran (ne napříč)
+  g.strokeStyle = '#8d897f'; g.lineWidth = 2.5;
+  g.beginPath(); edge(-1); edge(1); g.stroke();
+  // krajnice Hradecké přes ústí: plnou čáru nahradí vodicí (přerušovaná)
+  g.fillStyle = '#3a3d40';
+  g.fillRect(X - 3, y - h - r + 2, 4.5, w + 2 * r - 4);
+  g.setLineDash([9, 7]);
+  g.strokeStyle = 'rgba(255,255,255,0.85)'; g.lineWidth = 3;
+  g.beginPath(); g.moveTo(X, y - h - r + 4); g.lineTo(X, y + h + r - 2); g.stroke();
+  // osa boční ulice + „dej přednost" (vyjíždí se severní polovinou)
+  g.setLineDash([10, 8]);
+  g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 1.6;
+  g.beginPath(); g.moveTo(X + 24, y); g.lineTo(X1, y); g.stroke();
+  g.setLineDash([]);
+  g.fillStyle = 'rgba(255,255,255,0.85)';
+  for (let ty = y - h + 1.5; ty < y - 3; ty += 4.4) {
+    g.beginPath(); g.moveTo(X + 17, ty); g.lineTo(X + 17, ty + 3.4); g.lineTo(X + 10, ty + 1.7); g.closePath(); g.fill();
+  }
+  g.restore();
 }
 function drawEnvTop(g, builds) {
   const E = window.REAL_ENV;
@@ -2208,8 +2294,12 @@ function drawVehicleLightsLocal(L, W, braking) {
 }
 
 function drawIndicatorsLocal(v, L, W, front = true, rear = true) {
-  if (!v.path || v.path.move === 'T' || v.crashed || Math.floor(G.time * 3.2) % 2) return;
-  const y = v.path.move === 'L' ? -W / 2 + 0.7 : W / 2 - 3.2;
+  if (!v.path || v.crashed || Math.floor(G.time * 3.2) % 2) return;
+  let mv = v.path.move;
+  if (v.path === AH) mv = v.s < AH.sLeave + 70 ? 'R' : 'T';
+  else if (v.ahTurn && v.s > v.path.sClear) mv = v.s > v.path.ex0 - 70 ? 'R' : 'T';
+  if (mv === 'T') return;
+  const y = mv === 'L' ? -W / 2 + 0.7 : W / 2 - 3.2;
   ctx.save();
   ctx.fillStyle = '#ffb000';
   ctx.shadowColor = '#ffb000'; ctx.shadowBlur = 5;
